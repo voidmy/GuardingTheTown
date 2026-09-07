@@ -1,0 +1,28 @@
+{
+  "platform": "wechatgame",
+  "debug": false,
+  "buildPath": "project://build",
+  "outputName": "wechatgame",
+  "name": "GuardingTheTown",
+  "engineModulesConfigKey": "defaultConfig",
+  "mainBundleCompressionType": "merge_all_json",
+  "mainBundleIsRemote": false,
+  "startScene": "6ecf52d1-dbc7-47b5-9c82-0944a743de49",
+  "scenes": [
+    {
+      "url": "db://assets/scene/scene.scene",
+      "uuid": "6ecf52d1-dbc7-47b5-9c82-0944a743de49"
+    }
+  ],
+  "sourceMaps": false,
+  "md5Cache": false,
+  "packages": {
+    "wechatgame": {
+      "appid": "wx33e1777580926767",
+      "orientation": "landscape",
+      "buildOpenDataContextTemplate": false,
+      "separateEngine": false,
+      "wasmSubpackage": false
+    }
+  }
+}

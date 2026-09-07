@@ -1,0 +1,51 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: damage-number-batch-vs:vert
+      frag: damage-number-batch-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+}%
+
+CCProgram damage-number-batch-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #include <builtin/uniforms/cc-local>
+
+  in vec3 a_position;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+
+  out vec2 uv0;
+  out vec4 vertexColor;
+
+  vec4 vert () {
+    uv0 = a_texCoord;
+    vertexColor = a_color;
+    vec4 position = cc_matWorld * vec4(a_position, 1.0);
+    return cc_matViewProj * position;
+  }
+}%
+
+CCProgram damage-number-batch-fs %{
+  precision highp float;
+
+  in vec2 uv0;
+  in vec4 vertexColor;
+
+  #pragma builtin(local)
+  layout(set = 2, binding = 12) uniform sampler2D cc_spriteTexture;
+
+  vec4 frag () {
+    return texture(cc_spriteTexture, uv0) * vertexColor;
+  }
+}%

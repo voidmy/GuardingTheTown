@@ -1,0 +1,67 @@
+{
+  "package_version": 2,
+  "name": "cya-cocos-creator-mcp",
+  "version": "0.1.0",
+  "editor": ">=3.8.6",
+  "description": "MCP server for Cocos Creator: in-editor preview start/stop + screenshot",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@cocos/creator-types": "^3.8.6",
+    "@types/node": "^18.17.1",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.8"
+  },
+  "panels": {
+    "default": {
+      "title": "CYA Cocos Creator MCP",
+      "type": "dockable",
+      "main": "dist/panel",
+      "size": {
+        "min-width": 320,
+        "min-height": 180,
+        "width": 400,
+        "height": 240
+      }
+    }
+  },
+  "contributions": {
+    "menu": [
+      {
+        "path": "i18n:menu.extension/CYA Cocos Creator MCP",
+        "label": "Open Panel",
+        "message": "open-panel"
+      }
+    ],
+    "messages": {
+      "open-panel": {
+        "methods": [
+          "openPanel"
+        ]
+      },
+      "start-server": {
+        "methods": [
+          "startServer"
+        ]
+      },
+      "stop-server": {
+        "methods": [
+          "stopServer"
+        ]
+      },
+      "get-server-status": {
+        "methods": [
+          "getServerStatus"
+        ]
+      }
+    }
+  }
+}

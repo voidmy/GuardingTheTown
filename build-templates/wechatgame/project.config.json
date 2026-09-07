@@ -1,0 +1,12 @@
+{
+  "setting": {
+    "enhance": false,
+    "useIsolateContext": false,
+    "useMultiFrameRuntime": false,
+    "useApiHook": false,
+    "useApiHostProcess": false,
+    "useCompilerModule": false,
+    "compileHotReLoad": false
+  },
+  "libVersion": "3.17.0"
+}

@@ -1,0 +1,74 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: monster-batch-vs:vert
+      frag: monster-batch-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        animParams: { value: [4, 8, 0, 0] }
+}%
+
+CCProgram monster-batch-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #include <builtin/uniforms/cc-local>
+
+  in vec3 a_position;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+
+  out vec2 uv0;
+  out float opacity;
+  out float hitFlash;
+
+  uniform MonsterAnimation {
+    vec4 animParams;
+  };
+
+  vec4 vert () {
+    float frameCount = max(1.0, floor(animParams.x + 0.5));
+    float fps = max(0.001, animParams.y);
+    float phase = floor(a_color.r * 255.0 + 0.5);
+    float current = mod(cc_time.x, frameCount / fps) * fps;
+    float frame = mod(floor(current) + phase, frameCount);
+
+    vec2 localUV = a_texCoord;
+    if (a_color.g > 0.5) {
+      localUV.x = 1.0 - localUV.x;
+    }
+    uv0 = vec2((frame + localUV.x) / frameCount, localUV.y);
+    opacity = a_color.a;
+    hitFlash = a_color.b;
+
+    vec4 position = cc_matWorld * vec4(a_position, 1.0);
+    return cc_matViewProj * position;
+  }
+}%
+
+CCProgram monster-batch-fs %{
+  precision highp float;
+
+  in vec2 uv0;
+  in float opacity;
+  in float hitFlash;
+
+  #pragma builtin(local)
+  layout(set = 2, binding = 12) uniform sampler2D cc_spriteTexture;
+
+  vec4 frag () {
+    vec4 color = texture(cc_spriteTexture, uv0);
+    color.rgb = mix(color.rgb, vec3(1.0, 0.08, 0.08), hitFlash * 0.75);
+    color.a *= opacity;
+    return color;
+  }
+}%

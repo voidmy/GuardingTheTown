@@ -1,0 +1,30 @@
+{
+  "__type__": "cc.Material",
+  "_name": "player-health",
+  "_objFlags": 0,
+  "_native": "",
+  "_effectAsset": {
+    "__uuid__": "1976c854-a5ee-40e6-bfd8-a3de7957326b",
+    "__expectedType__": "cc.EffectAsset"
+  },
+  "_techIdx": 0,
+  "_defines": [
+    {}
+  ],
+  "_states": [
+    {
+      "rasterizerState": {},
+      "depthStencilState": {},
+      "blendState": {
+        "targets": [
+          {}
+        ]
+      }
+    }
+  ],
+  "_props": [
+    {
+      "healthRatio": 1
+    }
+  ]
+}

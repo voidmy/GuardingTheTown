@@ -1,0 +1,6 @@
+{
+  "wsPort": 8865,
+  "mcpPort": 8866,
+  "timeoutMs": 8000,
+  "autoStart": true
+}

@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:"
+    />
+    <title>Cocos Editor Audio Capture</title>
+  </head>
+  <body>
+    <script>
+      (() => {
+        'use strict';
+
+        const HARD_MAX_DURATION_MS = 20_000;
+        const LEVEL_INTERVAL_MS = 100;
+        let active = null;
+        let generation = 0;
+
+        function capabilities() {
+          const supported =
+            typeof navigator.mediaDevices?.getUserMedia === 'function' &&
+            typeof MediaRecorder === 'function' &&
+            typeof Blob === 'function';
+          return {
+            supported,
+            message: supported ? '' : '安全录音页缺少 navigator.mediaDevices.getUserMedia 或 MediaRecorder',
+          };
+        }
+
+        async function start(options) {
+          if (!capabilities().supported) throw namedError('NotSupportedError', capabilities().message);
+          if (active && !isTerminal(active.state)) throw namedError('BusyError', '已有录音正在进行');
+          validateOptions(options);
+
+          const session = {
+            token: ++generation,
+            state: 'starting',
+            level: 0,
+            stream: null,
+            recorder: null,
+            chunks: [],
+            mimeType: '',
+            endReason: 'stopped',
+            result: null,
+            error: null,
+            completion: createDeferred(),
+            maxTimer: 0,
+            levelTimer: 0,
+            levelContext: null,
+            levelSource: null,
+            analyser: null,
+            silentGain: null,
+          };
+          active = session;
+
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                channelCount: { ideal: 1 },
+                sampleRate: { ideal: options.sampleRate },
+                echoCancellation: { ideal: true },
+                noiseSuppression: { ideal: true },
+                autoGainControl: { ideal: true },
+              },
+              video: false,
+            });
+            if (active !== session || session.token !== generation) {
+              stopTracks(stream);
+              throw namedError('AbortError', '录音启动已取消');
+            }
+            session.stream = stream;
+
+            const mimeType = chooseMimeType();
+            const recorderOptions = mimeType ? { mimeType, audioBitsPerSecond: 128000 } : undefined;
+            const recorder = new MediaRecorder(stream, recorderOptions);
+            session.recorder = recorder;
+            session.mimeType = recorder.mimeType || mimeType || 'audio/webm';
+            recorder.ondataavailable = (event) => {
+              if (event.data && event.data.size > 0) session.chunks.push(event.data);
+            };
+            recorder.onerror = (event) => {
+              failSession(session, event.error || namedError('MediaRecorderError', 'MediaRecorder 采集失败'));
+            };
+            recorder.onstop = () => {
+              void finalizeStoppedSession(session);
+            };
+
+            recorder.start(250);
+            session.state = 'recording';
+            session.maxTimer = window.setTimeout(() => {
+              void stopSession(session, 'max-duration').catch((error) => failSession(session, error));
+            }, options.maxDurationMs);
+            void startLevelMeter(session);
+            return snapshot();
+          } catch (error) {
+            if (active === session) failSession(session, error);
+            throw error;
+          }
+        }
+
+        function snapshot() {
+          if (!active) {
+            return {
+              state: 'failed',
+              level: 0,
+              error: { name: 'NotFoundError', message: '当前没有安全录音会话' },
+            };
+          }
+          return {
+            state: active.state,
+            level: active.level,
+            result: active.result,
+            error: active.error,
+          };
+        }
+
+        async function stop() {
+          const session = active;
+          if (!session) throw namedError('NotFoundError', '当前没有安全录音会话');
+          if (session.state === 'completed') return snapshot();
+          if (session.state === 'failed') throw restoreError(session.error);
+          await stopSession(session, 'stopped');
+          if (active !== session) throw namedError('AbortError', '录音会话已取消');
+          return snapshot();
+        }
+
+        function cancel() {
+          const session = active;
+          generation += 1;
+          active = null;
+          if (!session) return { state: 'cancelled' };
+          clearSessionTimers(session);
+          cleanupLevelMeter(session);
+          stopTracks(session.stream);
+          const recorder = session.recorder;
+          if (recorder && recorder.state !== 'inactive') {
+            recorder.ondataavailable = null;
+            recorder.onerror = null;
+            recorder.onstop = null;
+            try {
+              recorder.stop();
+            } catch {
+              // BrowserWindow 随后会销毁，保持取消幂等。
+            }
+          }
+          session.state = 'cancelled';
+          session.completion.reject(namedError('AbortError', '录音已取消'));
+          return { state: 'cancelled' };
+        }
+
+        async function stopSession(session, reason) {
+          if (active !== session) throw namedError('AbortError', '录音会话已取消');
+          if (session.state === 'completed') return session.result;
+          if (session.state === 'failed') throw restoreError(session.error);
+          if (session.state === 'stopping') return session.completion.promise;
+          if (session.state !== 'recording')
+            throw namedError('InvalidStateError', `当前状态不能停止：${session.state}`);
+
+          session.state = 'stopping';
+          session.endReason = reason;
+          clearSessionTimers(session);
+          const recorder = session.recorder;
+          if (!recorder || recorder.state === 'inactive') {
+            throw namedError('InvalidStateError', 'MediaRecorder 已意外停止');
+          }
+          recorder.stop();
+          return session.completion.promise;
+        }
+
+        async function finalizeStoppedSession(session) {
+          if (active !== session || session.state === 'cancelled' || session.state === 'failed') return;
+          try {
+            clearSessionTimers(session);
+            cleanupLevelMeter(session);
+            stopTracks(session.stream);
+            const blob = new Blob(session.chunks, {
+              type: session.mimeType || 'audio/webm',
+            });
+            if (blob.size <= 0) throw namedError('EncodingError', 'MediaRecorder 没有返回音频数据');
+            session.result = {
+              reason: session.endReason,
+              mimeType: blob.type || session.mimeType || 'audio/webm',
+              audioBase64: await blobToBase64(blob),
+            };
+            session.level = 0;
+            session.state = 'completed';
+            session.completion.resolve(session.result);
+          } catch (error) {
+            failSession(session, error);
+          }
+        }
+
+        function failSession(session, error) {
+          if (isTerminal(session.state)) return;
+          clearSessionTimers(session);
+          cleanupLevelMeter(session);
+          stopTracks(session.stream);
+          session.level = 0;
+          session.error = serializeError(error);
+          session.state = 'failed';
+          session.completion.reject(restoreError(session.error));
+        }
+
+        async function startLevelMeter(session) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass || active !== session || session.state !== 'recording') return;
+          try {
+            const context = new AudioContextClass({ latencyHint: 'interactive' });
+            session.levelContext = context;
+            if (context.state === 'suspended') await context.resume();
+            if (active !== session || session.state !== 'recording') {
+              await context.close().catch(() => undefined);
+              return;
+            }
+            const source = context.createMediaStreamSource(session.stream);
+            const analyser = context.createAnalyser();
+            const silentGain = context.createGain();
+            analyser.fftSize = 512;
+            silentGain.gain.value = 0;
+            source.connect(analyser);
+            analyser.connect(silentGain);
+            silentGain.connect(context.destination);
+            session.levelSource = source;
+            session.analyser = analyser;
+            session.silentGain = silentGain;
+            const samples = new Float32Array(analyser.fftSize);
+            session.levelTimer = window.setInterval(() => {
+              if (active !== session || session.state !== 'recording') return;
+              analyser.getFloatTimeDomainData(samples);
+              let sum = 0;
+              for (const sample of samples) sum += sample * sample;
+              session.level = Math.min(1, Math.sqrt(sum / Math.max(1, samples.length)) * 3);
+            }, LEVEL_INTERVAL_MS);
+          } catch {
+            // 音量只驱动开发期动画；失败不影响 MediaRecorder 的真实录音。
+            cleanupLevelMeter(session);
+          }
+        }
+
+        function cleanupLevelMeter(session) {
+          if (session.levelTimer) window.clearInterval(session.levelTimer);
+          session.levelTimer = 0;
+          disconnect(session.levelSource);
+          disconnect(session.analyser);
+          disconnect(session.silentGain);
+          session.levelSource = null;
+          session.analyser = null;
+          session.silentGain = null;
+          const context = session.levelContext;
+          session.levelContext = null;
+          if (context && context.state !== 'closed') void context.close().catch(() => undefined);
+        }
+
+        function clearSessionTimers(session) {
+          if (session.maxTimer) window.clearTimeout(session.maxTimer);
+          session.maxTimer = 0;
+        }
+
+        function chooseMimeType() {
+          const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+          return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || '';
+        }
+
+        function validateOptions(options) {
+          if (!options || typeof options !== 'object') throw namedError('TypeError', '录音参数为空');
+          if (!Number.isInteger(options.sampleRate) || options.sampleRate <= 0) {
+            throw namedError('TypeError', 'sampleRate 必须是正整数');
+          }
+          if (
+            !Number.isFinite(options.minDurationMs) ||
+            !Number.isFinite(options.maxDurationMs) ||
+            options.minDurationMs < 0 ||
+            options.maxDurationMs <= options.minDurationMs ||
+            options.maxDurationMs > HARD_MAX_DURATION_MS
+          ) {
+            throw namedError('TypeError', `录音时长必须小于等于 ${HARD_MAX_DURATION_MS} ms`);
+          }
+        }
+
+        function blobToBase64(blob) {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(reader.error || namedError('EncodingError', '音频 base64 转换失败'));
+            reader.onload = () => {
+              const value = String(reader.result || '');
+              const commaIndex = value.indexOf(',');
+              if (commaIndex < 0) reject(namedError('EncodingError', '音频 data URL 无效'));
+              else resolve(value.slice(commaIndex + 1));
+            };
+            reader.readAsDataURL(blob);
+          });
+        }
+
+        function stopTracks(stream) {
+          if (!stream) return;
+          for (const track of stream.getTracks()) track.stop();
+        }
+
+        function disconnect(node) {
+          if (!node) return;
+          try {
+            node.disconnect();
+          } catch {
+            // 清理保持幂等。
+          }
+        }
+
+        function isTerminal(state) {
+          return state === 'completed' || state === 'cancelled' || state === 'failed';
+        }
+
+        function serializeError(error) {
+          return {
+            name: error && error.name ? String(error.name) : 'Error',
+            message: error && error.message ? String(error.message) : String(error),
+          };
+        }
+
+        function restoreError(error) {
+          return namedError(error?.name || 'Error', error?.message || '安全录音页失败');
+        }
+
+        function namedError(name, message) {
+          const error = new Error(message);
+          error.name = name;
+          return error;
+        }
+
+        function createDeferred() {
+          let resolve;
+          let reject;
+          const promise = new Promise((resolvePromise, rejectPromise) => {
+            resolve = resolvePromise;
+            reject = rejectPromise;
+          });
+          // 页面可能在 host cancel 后立即销毁；预装 catch 避免取消路径产生 unhandled rejection。
+          promise.catch(() => undefined);
+          return { promise, resolve, reject };
+        }
+
+        window.editorAudioCapture = {
+          capabilities,
+          start,
+          snapshot,
+          stop,
+          cancel,
+        };
+      })();
+    </script>
+  </body>
+</html>

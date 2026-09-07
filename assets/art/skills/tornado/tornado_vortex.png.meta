@@ -1,0 +1,134 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "af6e0a16-4bf6-48d4-b8a4-9ee409a8dd9f",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "af6e0a16-4bf6-48d4-b8a4-9ee409a8dd9f@6c48a",
+      "displayName": "tornado_vortex",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "af6e0a16-4bf6-48d4-b8a4-9ee409a8dd9f",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9941": {
+      "importer": "sprite-frame",
+      "uuid": "af6e0a16-4bf6-48d4-b8a4-9ee409a8dd9f@f9941",
+      "displayName": "tornado_vortex",
+      "id": "f9941",
+      "name": "spriteFrame",
+      "userData": {
+        "trimThreshold": 1,
+        "rotated": false,
+        "offsetX": -2,
+        "offsetY": 0,
+        "trimX": 0,
+        "trimY": 0,
+        "width": 1250,
+        "height": 1254,
+        "rawWidth": 1254,
+        "rawHeight": 1254,
+        "borderTop": 0,
+        "borderBottom": 0,
+        "borderLeft": 0,
+        "borderRight": 0,
+        "packable": true,
+        "pixelsToUnit": 100,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "meshType": 0,
+        "vertices": {
+          "rawPosition": [
+            -625,
+            -627,
+            0,
+            625,
+            -627,
+            0,
+            -625,
+            627,
+            0,
+            625,
+            627,
+            0
+          ],
+          "indexes": [
+            0,
+            1,
+            2,
+            2,
+            1,
+            3
+          ],
+          "uv": [
+            0,
+            1254,
+            1250,
+            1254,
+            0,
+            0,
+            1250,
+            0
+          ],
+          "nuv": [
+            0,
+            0,
+            0.9968102073365231,
+            0,
+            0,
+            1,
+            0.9968102073365231,
+            1
+          ],
+          "minPos": [
+            -625,
+            -627,
+            0
+          ],
+          "maxPos": [
+            625,
+            627,
+            0
+          ]
+        },
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "af6e0a16-4bf6-48d4-b8a4-9ee409a8dd9f@6c48a",
+        "atlasUuid": "",
+        "trimType": "auto"
+      },
+      "ver": "1.0.12",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "sprite-frame",
+    "fixAlphaTransparencyArtifacts": false,
+    "hasAlpha": true,
+    "redirect": "af6e0a16-4bf6-48d4-b8a4-9ee409a8dd9f@6c48a"
+  }
+}

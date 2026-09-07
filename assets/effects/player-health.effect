@@ -1,0 +1,74 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: player-health-vs:vert
+      frag: player-health-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        healthRatio:
+          value: 1.0
+          target: healthState.x
+          editor:
+            range: [0.0, 1.0, 0.01]
+}%
+
+CCProgram player-health-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #if USE_LOCAL
+    #include <builtin/uniforms/cc-local>
+  #endif
+
+  in vec3 a_position;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+
+  out vec2 uv0;
+  out vec4 color;
+
+  vec4 vert () {
+    vec4 position = vec4(a_position, 1.0);
+    #if USE_LOCAL
+      position = cc_matWorld * position;
+    #endif
+
+    uv0 = a_texCoord;
+    color = a_color;
+    return cc_matViewProj * position;
+  }
+}%
+
+CCProgram player-health-fs %{
+  precision highp float;
+  #include <builtin/internal/embedded-alpha>
+  #include <builtin/internal/alpha-test>
+
+  in vec2 uv0;
+  in vec4 color;
+
+  uniform PlayerHealth {
+    vec4 healthState;
+  };
+
+  #pragma builtin(local)
+  layout(set = 2, binding = 11) uniform sampler2D cc_spriteTexture;
+
+  vec4 frag () {
+    vec4 outputColor = CCSampleWithAlphaSeparated(cc_spriteTexture, uv0) * color;
+    float luminance = dot(outputColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float remainingColor = clamp(healthState.x, 0.0, 1.0);
+    outputColor.rgb = mix(vec3(luminance), outputColor.rgb, remainingColor);
+    ALPHA_TEST(outputColor);
+    return outputColor;
+  }
+}%
