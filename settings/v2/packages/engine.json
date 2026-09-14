@@ -118,7 +118,7 @@
             "_value": false
           },
           "audio": {
-            "_value": false
+            "_value": true
           },
           "video": {
             "_value": false
@@ -164,7 +164,7 @@
             }
           },
           "dragon-bones": {
-            "_value": false
+            "_value": true
           },
           "marionette": {
             "_value": false
@@ -192,8 +192,10 @@
         "includeModules": [
           "2d",
           "affine-transform",
+          "audio",
           "base",
           "custom-pipeline",
+          "dragon-bones",
           "gfx-webgl",
           "ui"
         ],

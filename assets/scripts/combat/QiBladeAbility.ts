@@ -2,6 +2,7 @@ import { instantiate, Node, Prefab } from 'cc';
 import {
     Ability,
     AbilityFrameContext,
+    createCombatActionId,
     DamageInfo,
     EnemyCombatWorld,
     EnemyId,
@@ -26,7 +27,7 @@ interface QiBladeHitbox {
     initialRotation: number;
 }
 
-const BLADE_NODE_NAMES = ['BladeA', 'BladeB', 'BladeC'];
+const BLADE_NODE_NAMES = ['BladeA', 'BladeB', 'BladeC', 'BladeD', 'BladeE', 'BladeF'];
 const DEGREES_TO_RADIANS = Math.PI / 180;
 
 export class QiBladeAbility implements Ability {
@@ -92,8 +93,14 @@ export class QiBladeAbility implements Ability {
             this._damageTimer -= interval;
             this.collectBladeHits(context);
             const damage = this.createDamageInfo();
-            for (const enemyId of this._damagedEnemyIds) {
-                this._world.applyDamage(enemyId, damage);
+            this._hitResults.length = 0;
+            for (const enemyId of this._damagedEnemyIds) this._hitResults.push(enemyId);
+            this._hitResults.sort((first, second) => first - second);
+            let targetIndex = 0;
+            for (const enemyId of this._hitResults) {
+                if (this._world.applyDamage(enemyId, { ...damage, targetIndex })) {
+                    targetIndex++;
+                }
             }
         }
     }
@@ -103,6 +110,8 @@ export class QiBladeAbility implements Ability {
         return {
             amount: Math.max(0, this._options.damage) * attackPower,
             sourceAbilityId: this.id,
+            actionId: createCombatActionId(),
+            isPrimaryAttack: true,
         };
     }
 

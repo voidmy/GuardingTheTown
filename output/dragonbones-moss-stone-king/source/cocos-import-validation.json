@@ -1,0 +1,14 @@
+{
+  "prefab": "assets/prefabs/bosses/MossStoneKing.prefab",
+  "prefabUuid": "2b1532e3-2897-4948-96b8-6d68159a8668",
+  "armature": "MossStoneKing",
+  "defaultAnimation": "idle",
+  "playTimes": 0,
+  "sharedCache": true,
+  "enableBatch": true,
+  "sourceAssetsUnchanged": true,
+  "prefabReopened": true,
+  "animationCount": 8,
+  "cocosPreviewRun": false,
+  "gameSceneUnchanged": true
+}

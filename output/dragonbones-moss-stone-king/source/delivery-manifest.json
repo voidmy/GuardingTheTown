@@ -1,0 +1,17 @@
+{
+  "project": "project/MossStoneKing.dbproj",
+  "sha256": "90c448678a92eb01a8ff5faf107f7eccf2cdd0fb72a23a54150a3d0d672e1d23",
+  "zipBytes": 508427,
+  "bones": 8,
+  "animations": [
+    "idle",
+    "walk",
+    "enter",
+    "charge",
+    "slam",
+    "recover",
+    "death",
+    "attack"
+  ],
+  "editor": "DragonBones Pro 5.6.3"
+}

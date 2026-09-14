@@ -1,0 +1,45 @@
+{
+  "source": "DragonBones Pro native export",
+  "runtime": "5.6.300",
+  "bones": 8,
+  "slots": 7,
+  "atlas": [
+    512,
+    512
+  ],
+  "imageReferences": "resolved",
+  "animations": {
+    "idle": {
+      "seconds": 2.4,
+      "completed": true
+    },
+    "walk": {
+      "seconds": 1.2,
+      "completed": true
+    },
+    "enter": {
+      "seconds": 1.2,
+      "completed": true
+    },
+    "charge": {
+      "seconds": 1.2,
+      "completed": true
+    },
+    "slam": {
+      "seconds": 0.9,
+      "completed": true
+    },
+    "recover": {
+      "seconds": 1.8,
+      "completed": true
+    },
+    "death": {
+      "seconds": 1.4,
+      "completed": true
+    },
+    "attack": {
+      "seconds": 3.9,
+      "completed": true
+    }
+  }
+}

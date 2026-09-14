@@ -10,16 +10,34 @@ export enum MonsterSpawnFormation {
     Staggered = 'staggered',
 }
 
+export enum MonsterRank {
+    Normal = 'normal',
+    Elite = 'elite',
+    Boss = 'boss',
+}
+
 export interface MonsterDefinition {
     id: string;
     displayName: string;
+    rank: MonsterRank;
+    /** Optional key for a dedicated visual prefab. */
+    prefabKey?: string;
+    /** Authored death animation duration, in seconds at the prefab's playback speed. */
+    deathAnimationDuration?: number;
+    maximumActiveCount?: number;
     pressureCost: number;
     maximumHealth: number;
     size: number;
+    /** Body circle used by projectile and area attacks. */
+    hitRadius: number;
+    /** Vertical hit-circle offset from the movement/separation center. */
+    hitOffsetY: number;
+    /** Smaller circle used for separation and movement. */
+    bodyRadius: number;
+    mass: number;
+    contactDamageMultiplier: number;
+    /** Constant active movement speed before applying the entrance multiplier. */
     moveSpeed: number;
-    maximumSpeed: number;
-    /** Maximum velocity change per second when steering toward a target. */
-    steeringAcceleration: number;
     /** Stable per-monster target offset range; this is not an occupancy slot. */
     targetOffsetMin: number;
     targetOffsetMax: number;
@@ -40,6 +58,18 @@ export interface MonsterSpawnEntranceDefinition {
     moveSpeedMultiplier: number;
 }
 
+export interface MonsterSpecialSpawnDefinition {
+    /** Time since the start of this wave. */
+    atTime: number;
+    monsterId: string;
+    entranceId: string;
+    count: number;
+    /** Optional visible spawn position relative to the player. */
+    targetOffset?: { x: number; y: number };
+    /** Opening showcase events must not repeat when the wave sequence loops. */
+    oncePerRun?: boolean;
+}
+
 export interface MonsterWaveDefinition {
     id: string;
     displayName: string;
@@ -55,6 +85,8 @@ export interface MonsterWaveDefinition {
     spawnInterval: number;
     /** Hard population ceiling for this wave. */
     activeMonsterLimit: number;
+    /** Events in chronological order; blocked events retry until the wave ends. */
+    specialSpawns?: readonly MonsterSpecialSpawnDefinition[];
 }
 
 export interface MonsterLevelDefinition {
@@ -74,6 +106,7 @@ export interface MonsterSpawnBatchCommand {
     firstMonsterIndex: number;
     batchSize: number;
     batchSequence: number;
+    targetOffset?: { x: number; y: number };
 }
 
 /**
@@ -81,8 +114,9 @@ export interface MonsterSpawnBatchCommand {
  * 60-second composition windows and 1 / 1 / 0.5 / 0.25-second spawn checks.
  * Its 15 / 30 / 50 / 40 minimum populations and 300 normal-enemy cap are
  * scaled by the current 2556x1179-to-1280x720 battlefield area ratio (~3.27).
- * The 70px/s common-enemy speed is the current 260px/s player speed multiplied
- * by Brotato's slow-enemy-to-player ratio (120 / 450), then rounded.
+ * Against the current 260 units/s player, common enemies move at 130 units/s
+ * (a 2:1 player-to-enemy ratio before entrance modifiers). The cotton elite
+ * pursues faster at 160 units/s; the heavier stone boss moves at 100 units/s.
  */
 export const DEFAULT_MONSTER_LEVEL: MonsterLevelDefinition = {
     id: 'greybox-level-01',
@@ -92,15 +126,60 @@ export const DEFAULT_MONSTER_LEVEL: MonsterLevelDefinition = {
         {
             id: 'cotton',
             displayName: '棉团怪',
+            rank: MonsterRank.Normal,
             pressureCost: 1,
             maximumHealth: 3,
             size: 56,
-            moveSpeed: 70,
-            maximumSpeed: 90,
-            steeringAcceleration: 90,
+            hitRadius: 28,
+            hitOffsetY: 0,
+            bodyRadius: 24,
+            mass: 1,
+            contactDamageMultiplier: 1,
+            moveSpeed: 130,
             targetOffsetMin: 30,
             targetOffsetMax: 90,
             targetRefreshInterval: 0.75,
+        },
+        {
+            id: 'cotton-king-simple',
+            displayName: '棉团精英',
+            rank: MonsterRank.Elite,
+            prefabKey: 'cotton-king-simple',
+            deathAnimationDuration: 0.8,
+            maximumActiveCount: 2,
+            pressureCost: 12,
+            maximumHealth: 60,
+            size: 217,
+            hitRadius: 78,
+            hitOffsetY: 88,
+            bodyRadius: 64,
+            mass: 4,
+            contactDamageMultiplier: 2,
+            moveSpeed: 160,
+            targetOffsetMin: 0,
+            targetOffsetMax: 20,
+            targetRefreshInterval: 0.6,
+        },
+        {
+            id: 'moss-stone-king',
+            displayName: '苔石拳王',
+            rank: MonsterRank.Boss,
+            prefabKey: 'moss-stone-king',
+            deathAnimationDuration: 1.4,
+            maximumActiveCount: 1,
+            pressureCost: 30,
+            maximumHealth: 300,
+            // Root-to-head/side spawn clearance; exclude the transparent shockwave bounds.
+            size: 250,
+            hitRadius: 116,
+            hitOffsetY: 116,
+            bodyRadius: 96,
+            mass: 8,
+            contactDamageMultiplier: 3,
+            moveSpeed: 100,
+            targetOffsetMin: 0,
+            targetOffsetMax: 12,
+            targetRefreshInterval: 0.6,
         },
     ],
     entrances: [
@@ -158,6 +237,19 @@ export const DEFAULT_MONSTER_LEVEL: MonsterLevelDefinition = {
             startDelay: 2,
             spawnInterval: 1,
             activeMonsterLimit: 2000,
+            specialSpawns: [
+                {
+                    atTime: 0, monsterId: 'cotton-king-simple', entranceId: 'north', count: 1,
+                    targetOffset: { x: -300, y: 40 },
+                    oncePerRun: true,
+                },
+                {
+                    atTime: 0, monsterId: 'moss-stone-king', entranceId: 'north', count: 1,
+                    targetOffset: { x: 340, y: 40 },
+                    oncePerRun: true,
+                },
+                { atTime: 30, monsterId: 'cotton-king-simple', entranceId: 'north', count: 1 },
+            ],
         },
         {
             id: 'mowing',
@@ -171,6 +263,7 @@ export const DEFAULT_MONSTER_LEVEL: MonsterLevelDefinition = {
             startDelay: 0,
             spawnInterval: 1,
             activeMonsterLimit: 2000,
+            specialSpawns: [{ atTime: 30, monsterId: 'cotton-king-simple', entranceId: 'north', count: 1 }],
         },
         {
             id: 'flank',
@@ -184,6 +277,7 @@ export const DEFAULT_MONSTER_LEVEL: MonsterLevelDefinition = {
             startDelay: 0,
             spawnInterval: 0.5,
             activeMonsterLimit: 2000,
+            specialSpawns: [{ atTime: 30, monsterId: 'cotton-king-simple', entranceId: 'east', count: 1 }],
         },
         {
             id: 'surround',
@@ -197,6 +291,7 @@ export const DEFAULT_MONSTER_LEVEL: MonsterLevelDefinition = {
             startDelay: 0,
             spawnInterval: 0.25,
             activeMonsterLimit: 2000,
+            specialSpawns: [{ atTime: 30, monsterId: 'moss-stone-king', entranceId: 'north', count: 1 }],
         },
     ],
 };
@@ -205,9 +300,13 @@ export const DEFAULT_MONSTER_LEVEL: MonsterLevelDefinition = {
 export class MonsterSpawnModel {
     private readonly _monsterTypeById = new Map<string, number>();
     private readonly _entranceById = new Map<string, MonsterSpawnEntranceDefinition>();
+    private readonly _scheduledByType = new Map<number, number>();
+    private readonly _completedOnceSpawns = new Set<MonsterSpecialSpawnDefinition>();
     private _waveIndex = 0;
     private _batchIndex = 0;
     private _batchSequence = 0;
+    private _specialSpawnIndex = 0;
+    private _specialSpawnRemaining = 0;
     private _timeRemainingInWave = 0;
     private _timeUntilNextBatch = 0;
     private _completed = false;
@@ -230,9 +329,12 @@ export class MonsterSpawnModel {
     }
 
     public reset (): void {
+        this._completedOnceSpawns.clear();
         this._waveIndex = 0;
         this._batchIndex = 0;
         this._batchSequence = 0;
+        this._specialSpawnIndex = 0;
+        this._specialSpawnRemaining = 0;
         this._completed = false;
         this._timeRemainingInWave = this.currentWave.duration;
         this._timeUntilNextBatch = Math.max(0, this.currentWave.startDelay);
@@ -256,6 +358,7 @@ export class MonsterSpawnModel {
         activeMonsterCount: number,
         hardCapacity: number,
         output: MonsterSpawnBatchCommand[],
+        activeCountByType?: ReadonlyMap<number, number>,
     ): void {
         output.length = 0;
         if (this._completed || dt <= 0 || hardCapacity <= 0) return;
@@ -274,14 +377,22 @@ export class MonsterSpawnModel {
         }
 
         this._timeUntilNextBatch -= dt;
-        let scheduledMonsterCount = 0;
+        const scheduledByType = this._scheduledByType;
+        scheduledByType.clear();
+        let scheduledMonsterCount = this.scheduleSpecialSpawns(
+            activeMonsterCount,
+            hardCapacity,
+            output,
+            scheduledByType,
+            activeCountByType,
+        );
         for (let guard = 0; guard < 64 && this._timeUntilNextBatch <= 0; guard++) {
             const wave = this.currentWave;
             this._timeUntilNextBatch += wave.spawnInterval;
-            const availableCapacity = this.getAvailableCapacity(
-                activeMonsterCount,
-                scheduledMonsterCount,
-                hardCapacity,
+            const monsterTypeIndex = this._monsterTypeById.get(wave.monsterId)!;
+            const availableCapacity = Math.min(
+                this.getAvailableCapacity(activeMonsterCount, scheduledMonsterCount, hardCapacity),
+                this.getAvailableTypeCapacity(monsterTypeIndex, scheduledByType, activeCountByType),
             );
             if (availableCapacity <= 0) continue;
 
@@ -302,7 +413,7 @@ export class MonsterSpawnModel {
                 this._batchIndex % wave.entranceIds.length
             ];
             output.push({
-                monsterTypeIndex: this._monsterTypeById.get(wave.monsterId)!,
+                monsterTypeIndex,
                 entrance: this._entranceById.get(entranceId)!,
                 formation: wave.formation,
                 count,
@@ -312,6 +423,7 @@ export class MonsterSpawnModel {
             });
 
             scheduledMonsterCount += count;
+            scheduledByType.set(monsterTypeIndex, (scheduledByType.get(monsterTypeIndex) ?? 0) + count);
             this._batchSequence++;
             this._batchIndex++;
         }
@@ -319,6 +431,64 @@ export class MonsterSpawnModel {
 
     private get currentWave (): MonsterWaveDefinition {
         return this._level.waves[this._waveIndex];
+    }
+
+    private scheduleSpecialSpawns (
+        activeMonsterCount: number,
+        hardCapacity: number,
+        output: MonsterSpawnBatchCommand[],
+        scheduledByType: Map<number, number>,
+        activeCountByType?: ReadonlyMap<number, number>,
+    ): number {
+        const wave = this.currentWave;
+        const events = wave.specialSpawns ?? [];
+        const elapsed = wave.duration - this._timeRemainingInWave;
+        let scheduledCount = 0;
+        while (this._specialSpawnIndex < events.length) {
+            const event = events[this._specialSpawnIndex];
+            if (event.oncePerRun && this._completedOnceSpawns.has(event)) {
+                this._specialSpawnIndex++;
+                continue;
+            }
+            if (event.atTime > elapsed) break;
+            if (this._specialSpawnRemaining === 0) this._specialSpawnRemaining = event.count;
+            const monsterTypeIndex = this._monsterTypeById.get(event.monsterId)!;
+            const count = Math.min(
+                this._specialSpawnRemaining,
+                this.getAvailableCapacity(activeMonsterCount, scheduledCount, hardCapacity),
+                this.getAvailableTypeCapacity(monsterTypeIndex, scheduledByType, activeCountByType),
+            );
+            if (count <= 0) break;
+            output.push({
+                monsterTypeIndex,
+                entrance: this._entranceById.get(event.entranceId)!,
+                formation: wave.formation,
+                count,
+                firstMonsterIndex: event.count - this._specialSpawnRemaining,
+                batchSize: event.count,
+                batchSequence: this._batchSequence++,
+                targetOffset: event.targetOffset,
+            });
+            scheduledCount += count;
+            scheduledByType.set(monsterTypeIndex, (scheduledByType.get(monsterTypeIndex) ?? 0) + count);
+            this._specialSpawnRemaining -= count;
+            if (this._specialSpawnRemaining > 0) break;
+            if (event.oncePerRun) this._completedOnceSpawns.add(event);
+            this._specialSpawnIndex++;
+        }
+        return scheduledCount;
+    }
+
+    private getAvailableTypeCapacity (
+        monsterTypeIndex: number,
+        scheduledByType: ReadonlyMap<number, number>,
+        activeCountByType?: ReadonlyMap<number, number>,
+    ): number {
+        const limit = this._level.monsters[monsterTypeIndex].maximumActiveCount;
+        if (limit === undefined) return Infinity;
+        return Math.max(0, limit
+            - (activeCountByType?.get(monsterTypeIndex) ?? 0)
+            - (scheduledByType.get(monsterTypeIndex) ?? 0));
     }
 
     private getAvailableCapacity (
@@ -336,6 +506,8 @@ export class MonsterSpawnModel {
 
     private advanceWave (): void {
         this._batchIndex = 0;
+        this._specialSpawnIndex = 0;
+        this._specialSpawnRemaining = 0;
         this._waveIndex++;
         if (this._waveIndex < this._level.waves.length) return;
 
@@ -369,13 +541,27 @@ export class MonsterSpawnModel {
                 definition.pressureCost,
                 definition.maximumHealth,
                 definition.size,
+                definition.hitRadius,
+                definition.bodyRadius,
+                definition.mass,
+                definition.contactDamageMultiplier,
                 definition.moveSpeed,
-                definition.maximumSpeed,
-                definition.steeringAcceleration,
                 definition.targetRefreshInterval,
             ];
             if (stats.some((value) => !Number.isFinite(value) || value <= 0)) {
                 throw new Error(`[MonsterSpawnModel] Monster ${definition.id} has invalid stats.`);
+            }
+            if (definition.deathAnimationDuration !== undefined
+                && (!Number.isFinite(definition.deathAnimationDuration)
+                    || definition.deathAnimationDuration <= 0)) {
+                throw new Error(`[MonsterSpawnModel] Monster ${definition.id} has invalid death duration.`);
+            }
+            if (!Number.isFinite(definition.hitOffsetY)
+                || [MonsterRank.Normal, MonsterRank.Elite, MonsterRank.Boss].indexOf(definition.rank) < 0
+                || (definition.prefabKey !== undefined && !definition.prefabKey.trim())
+                || (definition.maximumActiveCount !== undefined
+                    && (!Number.isInteger(definition.maximumActiveCount) || definition.maximumActiveCount < 1))) {
+                throw new Error(`[MonsterSpawnModel] Monster ${definition.id} has invalid rank, prefab or active limit.`);
             }
             if (!Number.isFinite(definition.targetOffsetMin)
                 || !Number.isFinite(definition.targetOffsetMax)
@@ -427,6 +613,21 @@ export class MonsterSpawnModel {
                 if (!this._entranceById.has(entranceId)) {
                     throw new Error(`[MonsterSpawnModel] Wave ${wave.id} has unknown entrance ${entranceId}.`);
                 }
+            }
+            let previousEventTime = -1;
+            for (const event of wave.specialSpawns ?? []) {
+                if (!Number.isFinite(event.atTime)
+                    || event.atTime < 0 || event.atTime >= wave.duration
+                    || event.atTime < previousEventTime
+                    || !Number.isInteger(event.count) || event.count < 1
+                    || !this._monsterTypeById.has(event.monsterId)
+                    || !this._entranceById.has(event.entranceId)
+                    || (event.targetOffset !== undefined
+                        && (!Number.isFinite(event.targetOffset.x)
+                            || !Number.isFinite(event.targetOffset.y)))) {
+                    throw new Error(`[MonsterSpawnModel] Wave ${wave.id} has an invalid special spawn.`);
+                }
+                previousEventTime = event.atTime;
             }
         }
     }

@@ -2,7 +2,7 @@ import { Node, Prefab, Vec2 } from 'cc';
 import {
     Ability,
     AbilityFrameContext,
-    DamageInfo,
+    createCombatActionId,
     EnemyCombatWorld,
     ProjectileEmitter,
 } from './CombatTypes';
@@ -19,12 +19,24 @@ export interface BasicAttackAbilityOptions {
     hitRadius: number;
     damage: number;
     getAttackPower?: () => number;
+    burstCount?: number;
+    burstSpacing?: number;
+    maxHits?: number;
+}
+
+interface PendingVolley {
+    delay: number;
+    directionX: number;
+    directionY: number;
+    options: BasicAttackAbilityOptions;
+    damage: number;
 }
 
 export class BasicAttackAbility implements Ability {
     public readonly id = 'basic-attack';
 
     private readonly _targetPosition = new Vec2();
+    private readonly _pending: PendingVolley[] = [];
     private _timer = 0;
 
     constructor (
@@ -34,8 +46,26 @@ export class BasicAttackAbility implements Ability {
     ) {}
 
     public updateAbility (dt: number, context: AbilityFrameContext): void {
-        const interval = Math.max(0.02, this._options.interval);
-        this._timer += dt;
+        const frameDt = Math.max(0, dt);
+        for (let index = 0; index < this._pending.length;) {
+            const volley = this._pending[index];
+            volley.delay -= frameDt;
+            if (volley.delay > 0) {
+                index++;
+                continue;
+            }
+            this.emitVolley(volley, context);
+            this._pending.splice(index, 1);
+        }
+
+        const burstCount = Math.max(1, this._options.burstCount ?? 1) | 0;
+        const burstSpacing = Math.max(0.01, this._options.burstSpacing ?? 0.1);
+        const interval = Math.max(
+            0.02,
+            this._options.interval,
+            (burstCount - 1) * burstSpacing + 0.001,
+        );
+        this._timer += frameDt;
         if (!this._world.hasEnemies) {
             this._timer = Math.min(this._timer, interval);
             return;
@@ -43,66 +73,86 @@ export class BasicAttackAbility implements Ability {
 
         while (this._timer >= interval && this._world.hasEnemies) {
             this._timer -= interval;
-            this.fire(context);
+            this.beginBurst(context, burstCount, burstSpacing, this._timer);
         }
     }
 
-    private fire (context: AbilityFrameContext): void {
+    public destroyAbility (): void {
+        this._pending.length = 0;
+    }
+
+    private beginBurst (
+        context: AbilityFrameContext,
+        burstCount: number,
+        spacing: number,
+        elapsedSinceStart: number,
+    ): void {
         const attackRange = Math.max(1, this._options.attackRange);
-        const targetId = this._world.findNearestEnemy(
-            context.originX,
-            context.originY,
-            attackRange,
-            true,
-        );
+        const targetId = this._world.findAttackTarget
+            ? this._world.findAttackTarget(
+                context.originX, context.originY, attackRange, true, this.id,
+            )
+            : this._world.findNearestEnemy(
+                context.originX, context.originY, attackRange, true,
+            );
         if (targetId === null
-            || !this._world.getEnemyPosition(targetId, this._targetPosition)) {
-            return;
-        }
+            || !this._world.getEnemyPosition(targetId, this._targetPosition)) return;
 
         let directionX = this._targetPosition.x - context.originX;
         let directionY = this._targetPosition.y - context.originY;
-        const directionLength = Math.sqrt(
-            directionX * directionX + directionY * directionY,
-        );
-        if (directionLength < 0.001) return;
+        const length = Math.hypot(directionX, directionY);
+        if (length < 0.001) return;
+        directionX /= length;
+        directionY /= length;
 
-        directionX /= directionLength;
-        directionY /= directionLength;
-        const projectileCount = Math.max(1, this._options.projectilesPerShot | 0);
+        const options = { ...this._options };
+        const damage = Math.max(0, options.damage)
+            * Math.max(0, options.getAttackPower?.() ?? 1);
+        for (let shot = 0; shot < burstCount; shot++) {
+            const volley: PendingVolley = {
+                delay: shot * spacing - elapsedSinceStart,
+                directionX,
+                directionY,
+                options,
+                damage,
+            };
+            if (volley.delay <= 0) this.emitVolley(volley, context);
+            else this._pending.push(volley);
+        }
+    }
+
+    private emitVolley (volley: PendingVolley, context: AbilityFrameContext): void {
+        const options = volley.options;
+        const projectileCount = Math.max(1, options.projectilesPerShot | 0);
         const middleIndex = (projectileCount - 1) * 0.5;
-        for (let i = 0; i < projectileCount; i++) {
-            const radians = (i - middleIndex) * this._options.spreadAngle
-                * Math.PI / 180;
-            const cos = Math.cos(radians);
-            const sin = Math.sin(radians);
+        for (let index = 0; index < projectileCount; index++) {
+            const radians = (index - middleIndex) * options.spreadAngle * Math.PI / 180;
+            const cosine = Math.cos(radians);
+            const sine = Math.sin(radians);
             this._projectiles.spawnProjectile({
-                prefab: this._options.prefab,
-                visualParent: this._options.visualParent,
+                prefab: options.prefab,
+                visualParent: options.visualParent,
                 originX: context.originX,
                 originY: context.originY,
-                directionX: directionX * cos - directionY * sin,
-                directionY: directionX * sin + directionY * cos,
-                speed: this._options.projectileSpeed,
+                directionX: volley.directionX * cosine - volley.directionY * sine,
+                directionY: volley.directionX * sine + volley.directionY * cosine,
+                speed: options.projectileSpeed,
                 lifetime: Math.min(
-                    this._options.projectileLifetime,
-                    attackRange / Math.max(0.001, this._options.projectileSpeed),
+                    options.projectileLifetime,
+                    Math.max(1, options.attackRange) / Math.max(0.001, options.projectileSpeed),
                 ),
-                hitRadius: this._options.hitRadius,
-                maxHits: 1,
-                damage: this.createDamageInfo(),
+                hitRadius: options.hitRadius,
+                maxHits: Math.max(1, options.maxHits ?? 1),
+                damage: {
+                    amount: volley.damage,
+                    sourceAbilityId: this.id,
+                    actionId: createCombatActionId(),
+                    isPrimaryAttack: true,
+                },
                 despawnOutsideBounds: true,
                 hitOnlyInsideBounds: true,
                 rotateToDirection: false,
             });
         }
-    }
-
-    private createDamageInfo (): DamageInfo {
-        const attackPower = Math.max(0, this._options.getAttackPower?.() ?? 1);
-        return {
-            amount: Math.max(0, this._options.damage) * attackPower,
-            sourceAbilityId: this.id,
-        };
     }
 }

@@ -12,11 +12,17 @@
 4. 打开主场景 `assets/scene/scene.scene`。
 5. 使用编辑器的预览功能运行游戏。
 
+局内升级与 HUD 秘籍的使用方式见 [升级系统与秘籍](docs/upgrade-system.md)。秘籍可即时获得技能、调整等级、将全部技能设为满级并测试进化，修改仅作用于当前对局。
+
 ## 微信小游戏构建
 
 在 Cocos Creator 的构建发布面板选择微信小游戏平台，可导入
 `build-configs/wechatgame.json` 中的构建配置。构建输出目录为
 `build/wechatgame`，可使用微信开发者工具打开。
+
+微信启动模板 `build-templates/wechatgame/application.js` 会在场景加载前
+预加载 `Resource` Bundle，因为主场景直接引用了其中的 UI Prefab。
+修改启动流程时需保留这项依赖，不能等 UI 脚本启动后才加载。
 
 ## 目录
 

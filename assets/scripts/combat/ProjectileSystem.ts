@@ -28,11 +28,19 @@ interface ProjectileState {
     despawnOutsideBounds: boolean;
     hitOnlyInsideBounds: boolean;
     cullRadius: number;
+    actionHits: SharedActionHits | null;
+}
+
+interface SharedActionHits {
+    actionId: number;
+    liveProjectiles: number;
+    enemies: Set<EnemyId>;
 }
 
 export class ProjectileSystem implements ProjectileEmitter {
     private readonly _active: ProjectileState[] = [];
     private readonly _pools = new Map<Prefab, Node[]>();
+    private readonly _actionHits = new Map<number, SharedActionHits>();
     private readonly _hitResults: EnemyId[] = [];
     private readonly _localPosition = new Vec3();
     private readonly _worldPosition = new Vec3();
@@ -75,6 +83,16 @@ export class ProjectileSystem implements ProjectileEmitter {
         const maxHits = Number.isFinite(request.maxHits)
             ? Math.max(1, request.maxHits | 0)
             : Number.POSITIVE_INFINITY;
+        let actionHits: SharedActionHits | null = null;
+        if (request.deduplicateActionHits && request.damage.actionId !== undefined) {
+            actionHits = this._actionHits.get(request.damage.actionId) ?? {
+                actionId: request.damage.actionId,
+                liveProjectiles: 0,
+                enemies: new Set<EnemyId>(),
+            };
+            actionHits.liveProjectiles++;
+            this._actionHits.set(actionHits.actionId, actionHits);
+        }
         const state: ProjectileState = {
             prefab: request.prefab,
             node,
@@ -87,23 +105,30 @@ export class ProjectileSystem implements ProjectileEmitter {
             maxHits,
             hitCount: 0,
             hitEnemyIds: maxHits > 1 ? new Set<EnemyId>() : null,
-            damage: request.damage,
+            damage: { ...request.damage },
             despawnOutsideBounds: request.despawnOutsideBounds,
             hitOnlyInsideBounds: request.hitOnlyInsideBounds,
             cullRadius,
+            actionHits,
         };
         this.setVisualPosition(state);
         this._active.push(state);
     }
 
     public update (dt: number): void {
+        const frameDt = Math.max(0, dt);
         for (let i = this._active.length - 1; i >= 0; i--) {
             const projectile = this._active[i];
+            if (projectile.remainingLife <= 0) {
+                this.recycle(i);
+                continue;
+            }
             const previousX = projectile.x;
             const previousY = projectile.y;
-            projectile.x += projectile.velocityX * dt;
-            projectile.y += projectile.velocityY * dt;
-            projectile.remainingLife -= dt;
+            const travelDt = Math.min(frameDt, projectile.remainingLife);
+            projectile.x += projectile.velocityX * travelDt;
+            projectile.y += projectile.velocityY * travelDt;
+            projectile.remainingLife -= frameDt;
             this.setVisualPosition(projectile);
 
             this._hitResults.length = 0;
@@ -116,11 +141,18 @@ export class ProjectileSystem implements ProjectileEmitter {
                 this._hitResults,
                 projectile.hitOnlyInsideBounds,
             );
+            // The world returns exact segment contact order, then stable ID.
+            // Keep that ordering for formation's first/remaining-target effects.
             for (const enemyId of this._hitResults) {
                 if (projectile.hitEnemyIds?.has(enemyId)) continue;
-                if (!this._world.applyDamage(enemyId, projectile.damage)) continue;
+                if (projectile.actionHits?.enemies.has(enemyId)) continue;
+                if (!this._world.applyDamage(enemyId, {
+                    ...projectile.damage,
+                    targetIndex: projectile.hitCount,
+                })) continue;
 
                 projectile.hitEnemyIds?.add(enemyId);
+                projectile.actionHits?.enemies.add(enemyId);
                 projectile.hitCount++;
                 if (projectile.hitCount >= projectile.maxHits) break;
             }
@@ -137,6 +169,14 @@ export class ProjectileSystem implements ProjectileEmitter {
     public clear (): void {
         for (let i = this._active.length - 1; i >= 0; i--) {
             this.recycle(i);
+        }
+    }
+
+    public clearAbility (sourceAbilityId: string): void {
+        for (let index = this._active.length - 1; index >= 0; index--) {
+            if (this._active[index].damage.sourceAbilityId === sourceAbilityId) {
+                this.recycle(index);
+            }
         }
     }
 
@@ -163,6 +203,12 @@ export class ProjectileSystem implements ProjectileEmitter {
 
     private recycle (index: number): void {
         const projectile = this._active[index];
+        if (projectile.actionHits) {
+            projectile.actionHits.liveProjectiles--;
+            if (projectile.actionHits.liveProjectiles === 0) {
+                this._actionHits.delete(projectile.actionHits.actionId);
+            }
+        }
         projectile.node.active = false;
         let pool = this._pools.get(projectile.prefab);
         if (!pool) {

@@ -2,13 +2,42 @@ import { Node, Prefab, Vec2 } from 'cc';
 
 export type EnemyId = number;
 
+let nextActionId = 1;
+
+/** Shared across abilities so a rebuilt skill cannot reuse a live action ID. */
+export function createCombatActionId (): number {
+    return nextActionId++;
+}
+
 export interface DamageInfo {
     amount: number;
+    sourceAbilityId: string;
+    actionId?: number;
+    isPrimaryAttack?: boolean;
+    /** Zero-based effective hit order within one projectile or damage cycle. */
+    targetIndex?: number;
+}
+
+export interface WindArea {
+    x: number;
+    y: number;
+    radius: number;
     sourceAbilityId: string;
 }
 
 export interface EnemyCombatWorld {
     readonly hasEnemies: boolean;
+
+    findAttackTarget? (
+        originX: number,
+        originY: number,
+        maxDistance: number,
+        insideBoundsOnly: boolean,
+        sourceAbilityId: string,
+    ): EnemyId | null;
+
+    /** Mutates a proposed ability position into the playable bounds. */
+    clampAbilityPosition? (position: Vec2, padding: number): void;
 
     findNearestEnemy (
         originX: number,
@@ -19,6 +48,7 @@ export interface EnemyCombatWorld {
 
     getEnemyPosition (enemyId: EnemyId, out: Vec2): boolean;
 
+    /** Results are ordered by first segment contact, with stable ID ties. */
     queryEnemiesAlongSegment (
         startX: number,
         startY: number,
@@ -78,6 +108,8 @@ export interface ProjectileSpawnRequest {
     despawnOutsideBounds: boolean;
     hitOnlyInsideBounds: boolean;
     rotateToDirection: boolean;
+    /** Shared action IDs hit each enemy only once across all of their routes. */
+    deduplicateActionHits?: boolean;
 }
 
 export interface ProjectileEmitter {

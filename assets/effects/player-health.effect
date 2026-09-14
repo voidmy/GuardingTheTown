@@ -20,6 +20,12 @@ CCEffect %{
           target: healthState.x
           editor:
             range: [0.0, 1.0, 0.01]
+        hitFlash:
+          value: 0.0
+          target: healthState.y
+        hitFlashWhite:
+          value: 0.0
+          target: healthState.z
 }%
 
 CCProgram player-health-vs %{
@@ -68,6 +74,8 @@ CCProgram player-health-fs %{
     float luminance = dot(outputColor.rgb, vec3(0.2126, 0.7152, 0.0722));
     float remainingColor = clamp(healthState.x, 0.0, 1.0);
     outputColor.rgb = mix(vec3(luminance), outputColor.rgb, remainingColor);
+    vec3 hitColor = mix(vec3(1.0, 0.23, 0.15), vec3(1.0), clamp(healthState.z, 0.0, 1.0));
+    outputColor.rgb = mix(outputColor.rgb, hitColor, clamp(healthState.y, 0.0, 1.0));
     ALPHA_TEST(outputColor);
     return outputColor;
   }

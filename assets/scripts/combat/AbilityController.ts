@@ -13,6 +13,14 @@ export class AbilityController {
         }
     }
 
+    public removeAbility (id: string): void {
+        for (let index = this._abilities.length - 1; index >= 0; index--) {
+            if (this._abilities[index].id !== id) continue;
+            this._abilities[index].destroyAbility?.();
+            this._abilities.splice(index, 1);
+        }
+    }
+
     public clear (): void {
         for (const ability of this._abilities) {
             ability.destroyAbility?.();

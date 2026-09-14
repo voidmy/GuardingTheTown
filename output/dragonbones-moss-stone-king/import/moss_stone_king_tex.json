@@ -1,0 +1,57 @@
+{
+  "name": "MossStoneKing",
+  "imagePath": "moss_stone_king_tex.png",
+  "width": 512,
+  "height": 512,
+  "SubTexture": [
+    {
+      "name": "body",
+      "x": 4,
+      "y": 4,
+      "width": 232,
+      "height": 160
+    },
+    {
+      "name": "head",
+      "x": 244,
+      "y": 4,
+      "width": 91,
+      "height": 95
+    },
+    {
+      "name": "arm_l",
+      "x": 4,
+      "y": 174,
+      "width": 138,
+      "height": 150
+    },
+    {
+      "name": "arm_r",
+      "x": 154,
+      "y": 174,
+      "width": 130,
+      "height": 142
+    },
+    {
+      "name": "foot_l",
+      "x": 342,
+      "y": 4,
+      "width": 74,
+      "height": 55
+    },
+    {
+      "name": "foot_r",
+      "x": 342,
+      "y": 74,
+      "width": 74,
+      "height": 55
+    },
+    {
+      "name": "shockwave",
+      "x": 8,
+      "y": 340,
+      "width": 496,
+      "height": 127
+    }
+  ]
+}

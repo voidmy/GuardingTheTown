@@ -5,7 +5,7 @@
   "outputName": "wechatgame",
   "name": "GuardingTheTown",
   "engineModulesConfigKey": "defaultConfig",
-  "mainBundleCompressionType": "merge_all_json",
+  "mainBundleCompressionType": "subpackage",
   "mainBundleIsRemote": false,
   "startScene": "6ecf52d1-dbc7-47b5-9c82-0944a743de49",
   "scenes": [

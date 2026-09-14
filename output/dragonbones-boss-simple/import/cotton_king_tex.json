@@ -1,0 +1,50 @@
+{
+  "name": "CottonKingSimple",
+  "imagePath": "cotton_king_tex.png",
+  "width": 512,
+  "height": 256,
+  "SubTexture": [
+    {
+      "name": "body",
+      "x": 4,
+      "y": 4,
+      "width": 160,
+      "height": 160
+    },
+    {
+      "name": "face",
+      "x": 168,
+      "y": 4,
+      "width": 88,
+      "height": 56
+    },
+    {
+      "name": "crown",
+      "x": 260,
+      "y": 4,
+      "width": 72,
+      "height": 48
+    },
+    {
+      "name": "hand",
+      "x": 336,
+      "y": 4,
+      "width": 48,
+      "height": 48
+    },
+    {
+      "name": "foot",
+      "x": 388,
+      "y": 4,
+      "width": 56,
+      "height": 36
+    },
+    {
+      "name": "shadow",
+      "x": 168,
+      "y": 68,
+      "width": 180,
+      "height": 40
+    }
+  ]
+}
