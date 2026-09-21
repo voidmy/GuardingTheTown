@@ -1,11 +1,13 @@
 import {
     _decorator,
+    director,
     AudioClip,
     AudioSource,
     Component,
     Label,
     Node,
     Prefab,
+    Rect,
     UITransform,
     Vec2,
     Vec3,
@@ -48,9 +50,21 @@ import { UIManager } from '../ui/UIManager';
 import { PlayerHud } from '../ui/PlayerHud';
 import { CheatPanel } from '../ui/CheatPanel';
 import { ProgressionSnapshot } from '../ui/ProgressionUI';
-import { RunProgression, UpgradeEffect, UpgradeOffer } from '../progression/RunProgression';
+import { MAX_SKILL_SLOTS, RunProgression, UpgradeEffect, UpgradeOffer } from '../progression/RunProgression';
+import { LootDropSystem } from '../progression/LootDropSystem';
+import { LootReward } from '../progression/LootDropModel';
+import { CharmId, POTIONS, PotionInventory, POTION_USE_GAP } from '../progression/ExpeditionDefinitions';
+import { MetaProgress } from '../progression/MetaProgress';
+import { PotionEffects } from '../combat/PotionEffects';
+import { HomePanel } from '../ui/HomePanel';
+import { ExpeditionHud } from '../ui/ExpeditionHud';
+import { PotionMenu } from '../ui/PotionMenu';
 import { QiBladeAbility, QiBladeAbilityOptions } from '../combat/QiBladeAbility';
+import { SwordQiAbility, SwordQiAbilityOptions } from '../combat/SwordQiAbility';
 import { TornadoAbility, TornadoAbilityOptions } from '../combat/TornadoAbility';
+import { ElementalAbility, ElementalAbilityOptions, ElementalKind } from '../combat/ElementalAbility';
+import { ElementalSkillAudio } from '../combat/ElementalSkillAudio';
+import { ALL_SKILLS, SKILL_NAMES, EVOLUTIONS } from '../progression/UpgradeDefinitions';
 import { GameSettings, GameSkill } from '../GameSettings';
 import { CharacterStats } from '../player/CharacterStats';
 import { DamageNumberBatchRenderer } from '../ui/DamageNumberBatchRenderer';
@@ -71,18 +85,29 @@ interface BossAttackState {
     damageApplied: boolean;
 }
 
-const ALL_GAME_SKILLS: readonly GameSkill[] = [
-    GameSkill.BasicAttack,
-    GameSkill.PiercingArrow,
-    GameSkill.QiBlade,
-    GameSkill.Tornado,
-];
-const SKILL_NAMES: Readonly<Record<GameSkill, string>> = {
-    [GameSkill.BasicAttack]: '基础射击',
-    [GameSkill.PiercingArrow]: '穿透箭',
-    [GameSkill.QiBlade]: '气刃环',
-    [GameSkill.Tornado]: '小旋风',
-};
+type CottonPhase = 'enter' | 'pursue' | 'summon' | 'charge' | 'roll' | 'recover';
+interface CottonSkillState {
+    phase: CottonPhase;
+    remaining: number;
+    nextSummon: boolean;
+    summonedTotal: number;
+    summonCount: number;
+    summonResolved: boolean;
+    points: Vec2[];
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    hitRadius: number;
+    damageApplied: boolean;
+}
+const COTTON_SUMMON_BATCH = 6;
+const COTTON_SUMMON_LIMIT = 12;
+const COTTON_ROLL_DURATION = 0.8;
+
+const ALL_GAME_SKILLS = ALL_SKILLS;
+const ABILITY_IDS = ['basic-attack', 'piercing-arrow', 'qi-blade', 'tornado',
+    'thunder', 'chain-lightning', 'frost-pulse', 'sword-qi'] as const;
 
 @ccclass('MonsterCrowdController')
 @menu('Gameplay/Monster Crowd Controller')
@@ -90,8 +115,41 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     @property(Node)
     public renderLayer: Node | null = null;
 
+    @property({ type: Node, displayName: '地面特效层' })
+    public groundEffectLayer: Node | null = null;
+
+    @property({ type: Node, displayName: '技能上层特效' })
+    public skillEffectLayer: Node | null = null;
+
+    @property({ type: ElementalSkillAudio, displayName: '元素技能音效' })
+    public elementalAudio: ElementalSkillAudio | null = null;
+
     @property(Node)
     public target: Node | null = null;
+
+    @property({ type: Node, displayName: '死亡掉落层' })
+    public lootLayerNode: Node | null = null;
+
+    @property({ min: 0, step: 1, displayName: '普通怪掉落经验' })
+    public normalDropExperience = 1;
+
+    @property({ min: 0, step: 1, displayName: '精英掉落经验' })
+    public eliteDropExperience = 20;
+
+    @property({ min: 0, step: 1, displayName: 'Boss 掉落经验' })
+    public bossDropExperience = 50;
+
+    @property({ min: 0, max: 100, step: 0.1, displayName: '宝箱额外掉率（%）', tooltip: '普通怪基准概率，额外掉落，不替代经验。' })
+    public chestDropChance = 0.8;
+
+    @property({ min: 0, max: 100, step: 0.1, displayName: '装备额外掉率（%）' })
+    public equipmentDropChance = 0.2;
+
+    @property({ min: 0, displayName: '精英稀有掉率倍率' })
+    public eliteRareDropMultiplier = 5;
+
+    @property({ min: 0, displayName: 'Boss 稀有掉率倍率' })
+    public bossRareDropMultiplier = 10;
 
     @property(Prefab)
     public bulletPrefab: Prefab | null = null;
@@ -104,6 +162,24 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
 
     @property(Prefab)
     public tornadoPrefab: Prefab | null = null;
+
+    @property({ type: Prefab, displayName: '自动落雷特效' })
+    public thunderPrefab: Prefab | null = null;
+
+    @property({ type: Prefab, displayName: '连锁闪电特效' })
+    public chainLightningPrefab: Prefab | null = null;
+
+    @property({ type: Prefab, displayName: '寒霜脉冲特效' })
+    public frostPulsePrefab: Prefab | null = null;
+
+    @property({ type: Prefab, displayName: '地裂药水特效' })
+    public earthRiftPrefab: Prefab | null = null;
+
+    @property({ type: Prefab, displayName: '唤雨药水特效' })
+    public rainPrefab: Prefab | null = null;
+
+    @property({ type: Prefab, displayName: '刀气起双斩特效' })
+    public swordQiPrefab: Prefab | null = null;
 
     @property({ type: Prefab, displayName: '棉团精英 Prefab' })
     public cottonKingSimplePrefab: Prefab | null = null;
@@ -231,6 +307,12 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     @property({ min: 0 })
     public arrowDamage = 1;
 
+    @property({ displayName: '气刃初始环绕距离', min: 1, tooltip: 'Lv.1 气刃到角色中心的距离，不影响刀身大小。' })
+    public qiBladeOrbitRadius = 190;
+
+    @property({ displayName: '气刃每级距离增量', min: 0, tooltip: '每升一级增加的环绕距离；进化保持 Lv.5 距离。' })
+    public qiBladeOrbitRadiusPerLevel = 15;
+
     @property({ displayName: 'Qi Blade Hit Radius', min: 1 })
     public qiBladeHitRadius = 48;
 
@@ -299,6 +381,9 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     private _bypassLeftAllowed = new Uint8Array(0);
     private _bypassRightAllowed = new Uint8Array(0);
     private _moveSpeedMultipliers = new Float32Array(0);
+    private _frozenUntil = new Float32Array(0);
+    private _slowedUntil = new Float32Array(0);
+    private _frostSpeedRatios = new Float32Array(0);
     private _targetSnapshotsX = new Float32Array(0);
     private _targetSnapshotsY = new Float32Array(0);
     private _targetOffsetsX = new Float32Array(0);
@@ -314,6 +399,14 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     private _prefabVisuals: MonsterPrefabVisuals | null = null;
     private readonly _bossAttacks = new Map<EnemyId, BossAttackState>();
     private readonly _bossNextAttackTimes = new Map<EnemyId, number>();
+    private readonly _cottonSkills = new Map<EnemyId, CottonSkillState>();
+    private readonly _summonedMonsters = new Set<EnemyId>();
+    private readonly _skillPosition = new Vec2();
+    private readonly _summonCommand: MonsterSpawnBatchCommand = {
+        monsterTypeIndex: DEFAULT_MONSTER_LEVEL.monsters.findIndex((monster) => monster.id === 'cotton'),
+        entrance: DEFAULT_MONSTER_LEVEL.entrances[0], formation: MonsterSpawnFormation.Line,
+        count: 1, firstMonsterIndex: 0, batchSize: 1, batchSequence: 0,
+    };
     private readonly _hitSourceWorld = new Vec3();
     private readonly _hitSourceLocal = new Vec3();
     private _maximumHitQueryExtent = 0;
@@ -336,6 +429,9 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     private _crowdPairCacheOverflow = false;
     private readonly _targetLocal = new Vec3();
     private readonly _viewportCenterLocal = new Vec3();
+    private readonly _rainViewportMin = new Vec3();
+    private readonly _rainViewportMax = new Vec3();
+    private readonly _rainViewportWorld = new Vec3();
     private readonly _facingDirection = new Vec2(1, 0);
     private readonly _segmentHitIndices: number[] = [];
     private _segmentHitTimes = new Float32Array(0);
@@ -348,6 +444,41 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     private _targetMover: TargetMover | null = null;
     private _characterStats: CharacterStats | null = null;
     private _damageNumberRenderer: DamageNumberBatchRenderer | null = null;
+    private _lootDrops: LootDropSystem | null = null;
+    private readonly _lootPosition = new Vec3();
+    private readonly _lootWorldPosition = new Vec3();
+    private readonly _collectLoot = (reward: LootReward): number | void => {
+        if (this._battleEnded || this._homeOpen) return 0;
+        if (reward.kind === 'potion') {
+            if (!reward.potion || !this._potions.pickup(reward.potion)) return 0;
+            this._lootNotice = `拾取${POTIONS[reward.potion].name}`;
+            this._lootNoticeTime = 4;
+            this._lootCollectedThisFrame = true;
+            return 1;
+        }
+        if (reward.kind === 'sand') {
+            const amount = reward.stacks ?? 1;
+            if (!MetaProgress.instance.addSand(amount)) return 0;
+            this._runSand += amount;
+            this._lootCollectedThisFrame = true;
+            return amount;
+        }
+        if (reward.kind === 'chest' || reward.kind === 'equipment') {
+            this.collectRareLoot(reward);
+            this._lootCollectedThisFrame = true;
+            return;
+        }
+        this._progression.addExperience(reward.experience);
+        if (reward.evolution) {
+            this._progression.grantEvolution();
+            this._characterStats?.heal(this._characterStats.maximumHealth * 0.15);
+        }
+        this._lootCollectedThisFrame = true;
+    };
+    private _lootCollectedThisFrame = false;
+    private _lootEquipmentChanged = false;
+    private _lootNotice = '';
+    private _lootNoticeTime = 0;
     private _abilityController: AbilityController | null = null;
     private _projectileSystem: ProjectileSystem | null = null;
     private _upgradePanel: UpgradeSelectionPanel | null = null;
@@ -360,6 +491,21 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     private _cheatOpen = false;
     private _loadingCheats = false;
     private _battleEnded = false;
+    private _homeOpen = true;
+    private _potionMenuOpen = false;
+    private _castingPotion = false;
+    private _leaving = false;
+    private _equippedCharm: CharmId | null = null;
+    private _cooldownMultiplier = 1;
+    private _runSand = 0;
+    private _potionGap = 0;
+    private _potions = new PotionInventory();
+    private _potionEffects: PotionEffects | null = null;
+    private _homePanel: HomePanel | null = null;
+    private _expeditionHud: ExpeditionHud | null = null;
+    private _potionMenu: PotionMenu | null = null;
+    private readonly _canCollectLoot = (reward: LootReward): boolean => reward.kind === 'potion'
+        ? this._potions.hasSpace : reward.kind !== 'sand' || !MetaProgress.instance.error;
     private _offerRetryTime = 0;
     private _initialMaximumHealth = 100;
     private _baseAttackPower = 1;
@@ -379,7 +525,9 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     private _basicAttackOptions: BasicAttackAbilityOptions | null = null;
     private _piercingArrowOptions: PiercingArrowAbilityOptions | null = null;
     private _qiBladeOptions: QiBladeAbilityOptions | null = null;
+    private _swordQiOptions: SwordQiAbilityOptions | null = null;
     private _tornadoOptions: TornadoAbilityOptions | null = null;
+    private readonly _elementalOptions = new Map<GameSkill, ElementalAbilityOptions>();
 
     public getProgressionSnapshot (): ProgressionSnapshot {
         const snapshot = this._progression.getSnapshot();
@@ -387,14 +535,16 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             formation: '破阵', focus: '专注猎杀', blade_guard: '护体气刃',
             wind_eye: '风眼暴露', kill_reserve: '余势', steady_guard: '稳守',
         };
-        const evolutionNames = ['疾风连射', '交叉箭阵', '护身刃阵', '聚流龙卷'];
         return {
+            elapsedSeconds: this._elapsedBattleTime,
+            kills: this._totalKillCount,
+            skillLimit: MAX_SKILL_SLOTS,
             playerLevel: snapshot.playerLevel,
             experience: snapshot.experience,
             experienceToNext: snapshot.nextLevelExperience,
             skills: snapshot.skills.map(skill => ({
                 ...skill,
-                name: skill.evolved ? evolutionNames[skill.skill] : SKILL_NAMES[skill.skill],
+                name: skill.evolved ? EVOLUTIONS[skill.skill].name : SKILL_NAMES[skill.skill],
                 innate: skill.skill === snapshot.initialSkill,
             })),
             cores: snapshot.coreIds.map(id => ({ id, name: coreNames[id] ?? id })),
@@ -408,12 +558,12 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 this._cores.has('kill_reserve') ? (this._reserveReady ? '余势已就绪'
                     : `余势 ${this._reserveKills}/8`) : '',
                 this._battleEnded ? '角色已倒下' : '',
-            ].filter(Boolean).join(' · '),
+            ].filter(Boolean).join(' · ') + (this._lootNoticeTime > 0 ? `\n${this._lootNotice}` : ''),
         };
     }
 
     public async openCheats (): Promise<void> {
-        if (this._battleEnded || this._loadingCheats || this._cheatOpen
+        if (this._homeOpen || this._potionMenuOpen || this._battleEnded || this._loadingCheats || this._cheatOpen
             || this._upgradePanel?.isShowing) return;
         if (!this._uiManager) {
             console.error('[MonsterCrowdController] 秘籍需要场景中的 UIManager。');
@@ -517,6 +667,13 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         return this._count - previousCount;
     }
 
+    public debugGrantEarthRift (): string {
+        if (this._homeOpen || this._battleEnded || !this._potionEffects || !this.earthRiftPrefab) return '请先开始守镇。';
+        if (!this._potions.pickup('earth-rift')) return '药水栏已满，请先使用或丢弃一瓶。';
+        this.refreshProgressionUI();
+        return '已获得地裂灵露，关闭秘籍后点击药水栏使用。';
+    }
+
     public debugGrantEvolution (): void {
         if (this._battleEnded) return;
         this._progression.grantEvolution();
@@ -532,7 +689,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     }
 
     public openEvolution (): void {
-        if (this._battleEnded || this._cheatOpen || this._upgradePanel?.isShowing) return;
+        if (this._homeOpen || this._potionMenuOpen || this._battleEnded || this._cheatOpen || this._upgradePanel?.isShowing) return;
         const offer = this._progression.openOffer('evolution', this.getGrowthHealth());
         if (offer) this.showGrowthOffer(offer);
     }
@@ -546,9 +703,10 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     }
 
     private setBattlePaused (paused: boolean): void {
-        const value = paused || this._battleEnded;
+        const value = paused || this._battleEnded || this._homeOpen || this._potionMenuOpen;
         if (this._isChoosingUpgrade === value) return;
         this._isChoosingUpgrade = value;
+        this._potionEffects?.setPaused(value);
         this._prefabVisuals?.setPaused(value);
         this._characterStats?.setCombatPaused(value);
         if (!this._targetMover) return;
@@ -561,7 +719,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     }
 
     private processGrowthQueue (): void {
-        if (this._battleEnded || this._cheatOpen || this._upgradePanel?.isShowing) return;
+        if (this._battleEnded || this._homeOpen || this._potionMenuOpen || this._cheatOpen || this._upgradePanel?.isShowing) return;
         if (this._elapsedBattleTime < this._offerRetryTime) {
             this.setBattlePaused(false);
             return;
@@ -633,14 +791,15 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
     }
 
     private rebuildSkill (skill: GameSkill): void {
-        const abilityIds = ['basic-attack', 'piercing-arrow', 'qi-blade', 'tornado'];
-        this._abilityController?.removeAbility(abilityIds[skill]);
-        this._projectileSystem?.clearAbility(abilityIds[skill]);
+        this._abilityController?.removeAbility(ABILITY_IDS[skill]);
+        this._projectileSystem?.clearAbility(ABILITY_IDS[skill]);
+        this._elementalOptions.delete(skill);
         this._learnedSkills.delete(skill);
         switch (skill) {
         case GameSkill.BasicAttack: this._basicAttackOptions = null; break;
         case GameSkill.PiercingArrow: this._piercingArrowOptions = null; break;
         case GameSkill.QiBlade: this._qiBladeOptions = null; break;
+        case GameSkill.SwordQi: this._swordQiOptions = null; break;
         case GameSkill.Tornado: this._tornadoOptions = null; this._tornadoAbility = null; break;
         }
     }
@@ -659,10 +818,17 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             if (!this._learnedSkills.has(skill)) this.addSkill(skill);
             const level = state.level;
             const evolved = state.evolved;
+            const elemental = this._elementalOptions.get(skill);
+            if (elemental) { elemental.level = level; elemental.evolved = evolved; elemental.cooldownMultiplier = this._cooldownMultiplier; }
+            if (skill === GameSkill.SwordQi && this._swordQiOptions) {
+                this._swordQiOptions.level = level;
+                this._swordQiOptions.evolved = evolved;
+                this._swordQiOptions.cooldownMultiplier = this._cooldownMultiplier;
+            }
             if (skill === GameSkill.BasicAttack && this._basicAttackOptions) {
                 Object.assign(this._basicAttackOptions, {
                     damage: this.bulletDamage * (evolved ? 0.85 : [0, 1, 1.2, 0.75, 0.9, 1][level]),
-                    interval: this.fireInterval * (level >= 5 ? 0.9 : 1),
+                    interval: this.fireInterval * (level >= 5 ? 0.9 : 1) * this._cooldownMultiplier,
                     burstCount: evolved ? 3 : level >= 3 ? 2 : 1,
                     burstSpacing: 0.1,
                     projectilesPerShot: 1,
@@ -671,7 +837,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             } else if (skill === GameSkill.PiercingArrow && this._piercingArrowOptions) {
                 Object.assign(this._piercingArrowOptions, {
                     damage: this.arrowDamage * (evolved ? 1.9 : [0, 1, 1.2, 1.2, 1.45, 1.65][level]),
-                    interval: this.arrowInterval * (level >= 5 ? 0.9 : 1),
+                    interval: this.arrowInterval * (level >= 5 ? 0.9 : 1) * this._cooldownMultiplier,
                     projectilesPerShot: evolved ? 3 : level >= 3 ? 2 : 1,
                     pattern: evolved ? 'fan' : 'parallel',
                     fanAngle: 30,
@@ -681,7 +847,8 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 Object.assign(this._qiBladeOptions, {
                     damage: this.qiBladeDamage * (evolved ? 1.85 : [0, 1, 1, 1.15, 1.4, 1.6][level]),
                     bladeCount: evolved ? 6 : Math.min(3, level),
-                    damageInterval: this.qiBladeDamageInterval * (level >= 5 ? 0.9 : 1),
+                    orbitRadius: this.qiBladeOrbitRadius + (level - 1) * this.qiBladeOrbitRadiusPerLevel,
+                    damageInterval: this.qiBladeDamageInterval * (level >= 5 ? 0.9 : 1) * this._cooldownMultiplier,
                 });
             } else if (skill === GameSkill.Tornado && this._tornadoOptions) {
                 Object.assign(this._tornadoOptions, {
@@ -706,6 +873,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
 
     private refreshProgressionUI (): void {
         this._hud?.refresh();
+        this._expeditionHud?.refresh(this._potions.slots, this._equippedCharm, this._runSand, this._potionGap, this._battleEnded);
         this._cheatPanel?.refresh();
         this._lastDisplayedCount = -1;
         this.updateCountLabel();
@@ -736,6 +904,9 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
 
     private onPlayerDied (): void {
         this._battleEnded = true;
+        this._potionEffects?.stopRain();
+        this._potionMenuOpen = false;
+        this._potionMenu?.hide();
         this._progression.cancelPendingRewards();
         this._upgradePanel?.hide();
         this._cheatOpen = false;
@@ -751,6 +922,108 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         this._focusStacks = 0;
         this._focusLastHit = -Infinity;
         this._focusOutOfRangeSince = -1;
+    }
+
+    private isRegularSkill (skill: GameSkill): boolean {
+        return skill !== GameSkill.Tornado && skill !== GameSkill.FrostPulse;
+    }
+
+    private beginExpedition (charm: CharmId | null): void {
+        if (!this._homeOpen || !this._characterStats || !this.tornadoPrefab || !this.frostPulsePrefab
+            || !this.renderLayer || !this.groundEffectLayer) return;
+        this._equippedCharm = charm;
+        this._cooldownMultiplier = charm === 'echo' ? 0.9 : 1;
+        this._potions = new PotionInventory(charm === 'satchel');
+        // Keep the existing rift and add a rain potion to the second starting slot.
+        this._potions.pickup('earth-rift');
+        this._potions.pickup('rain');
+        if (charm === 'wind') this._characterStats.moveSpeed *= 1.12;
+        this._potionEffects = new PotionEffects(this, this.tornadoPrefab, this.frostPulsePrefab,
+            this.renderLayer, this.groundEffectLayer, this._characterStats,
+            () => this._baseAttackPower * (1 + this._growthDamageBonus),
+            () => this.elementalAudio?.play('frost-pulse', false), this.earthRiftPrefab, {
+                onImpact: () => this._targetMover?.playSkillImpact(14, 0.32),
+                getVolume: () => this.elementalAudio?.volume ?? 0.7,
+            }, this.rainPrefab, this.skillEffectLayer ?? this.renderLayer, {
+                onOpening: () => this._targetMover?.playSkillImpact(5, 0.18),
+                getVolume: () => this.elementalAudio?.volume ?? 0.7,
+            });
+        this._homeOpen = false;
+        this._homePanel!.node.active = false;
+        if (this._hud) this._hud.node.active = true;
+        if (this.countLabelNode) this.countLabelNode.active = true;
+        this._expeditionHud!.node.active = true;
+        this.setBattlePaused(false);
+        this.syncProgression();
+    }
+
+    private openPotion (index: number): void {
+        if (this._homeOpen || this._battleEnded || this._cheatOpen || this._potionMenuOpen
+            || this._upgradePanel?.isShowing || !this._potionMenu) return;
+        const id = this._potions.slots[index];
+        if (!id) {
+            this._lootNotice = '药水由怪物掉落，靠近后自动拾取。';
+            this._lootNoticeTime = 4;
+            this.refreshProgressionUI();
+            return;
+        }
+        this._potionMenuOpen = true;
+        this.setBattlePaused(true);
+        const close = (): void => {
+            this._potionMenuOpen = false;
+            this._potionMenu?.hide();
+            this.processGrowthQueue();
+            this.refreshProgressionUI();
+        };
+        this._potionMenu.show(POTIONS[id].name, POTIONS[id].description, () => {
+            if (this._potions.slots[index] !== id || !this._potionMenuOpen || this._battleEnded) return '药水状态已变化。';
+            if (this._potionGap > 0) return `请关闭菜单，等待 ${this._potionGap.toFixed(1)} 秒后再使用。`;
+            if (!this._potionEffects || !this.target || !this._renderTransform) return '药水效果尚未就绪。';
+            this._renderTransform.convertToNodeSpaceAR(this.target.worldPosition, this._targetLocal);
+            this._targetMover?.getFacingDirection(this._facingDirection);
+            const context = this._abilityFrameContext;
+            context.originX = this._targetLocal.x; context.originY = this._targetLocal.y;
+            context.facingX = this._facingDirection.x; context.facingY = this._facingDirection.y;
+            let error: string;
+            this._castingPotion = true;
+            try { error = this._potionEffects.use(id, context); }
+            finally { this._castingPotion = false; }
+            if (error) return error;
+            this._potions.remove(index);
+            this._potionGap = POTION_USE_GAP;
+            close();
+            return '';
+        }, () => {
+            if (this._potions.slots[index] !== id || !this._potionMenuOpen || this._battleEnded) return;
+            this._potions.remove(index);
+            close();
+        }, close);
+    }
+
+    private openReturnHome (): void {
+        if (this._homeOpen || this._potionMenuOpen || this._cheatOpen || this._upgradePanel?.isShowing || this._leaving) return;
+        const leave = (): string => {
+            if (this._leaving) return '';
+            this._leaving = true;
+            this.setBattlePaused(true);
+            this._potionEffects?.stopRain();
+            director.loadScene(this.node.scene.name, error => {
+                if (error && this.isValid) {
+                    this._leaving = false;
+                    this._lootNotice = '返回小院失败，请再次尝试。';
+                    this._lootNoticeTime = 4;
+                }
+            });
+            return '';
+        };
+        if (this._battleEnded) { leave(); return; }
+        this._potionMenuOpen = true;
+        this.setBattlePaused(true);
+        this._potionMenu?.show('返回归梦小院', `已拾取的 ${this._runSand} 梦砂会保留。\n本局技能和剩余药水将清空。`, leave, null, () => {
+            this._potionMenuOpen = false;
+            this._potionMenu?.hide();
+            this.processGrowthQueue();
+        });
     }
 
     public get monsterCount (): number {
@@ -839,6 +1112,45 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         return true;
     }
 
+    public findPriorityEnemy (x: number, y: number, range: number): EnemyId | null {
+        let best: EnemyId | null = null;
+        let bestRank = -1;
+        let bestDistance = range * range;
+        // Only once per thunder cast, independent of the projectile focus core.
+        this.forEachMonsterInArea(x - range, x + range, y - range, y + range, index => {
+            if (!this.isMonsterInsideCombatBounds(index)) return;
+            const distance = (this._positionsX[index] - x) ** 2 + (this.getMonsterHitY(index) - y) ** 2;
+            if (distance > range * range) return;
+            const monster = this.getMonsterDefinition(index);
+            const rank = monster.rank === MonsterRank.Boss ? 2 : monster.rank === MonsterRank.Elite ? 1 : 0;
+            const id = this._monsterIds[index];
+            if (rank > bestRank || rank === bestRank && (distance < bestDistance
+                || distance === bestDistance && (best === null || id < best))) {
+                best = id; bestRank = rank; bestDistance = distance;
+            }
+        });
+        return best;
+    }
+
+    public applyFrost (enemyId: EnemyId, freezeDuration: number, slowDuration: number, speedRatio: number): void {
+        const index = this._monsterIndexById.get(enemyId);
+        if (index === undefined || this._battleEnded || this._isChoosingUpgrade && !this._castingPotion) return;
+        const rank = this.getMonsterDefinition(index).rank;
+        if (rank === MonsterRank.Boss) return;
+        const freeze = rank === MonsterRank.Normal ? Math.max(0, freezeDuration) : 0;
+        const ratio = rank === MonsterRank.Elite ? 1 - (1 - speedRatio) * 0.5 : speedRatio;
+        const wasSlowed = this._slowedUntil[index] > this._elapsedBattleTime;
+        this._frozenUntil[index] = Math.max(this._frozenUntil[index], this._elapsedBattleTime + freeze);
+        this._slowedUntil[index] = Math.max(this._slowedUntil[index], this._frozenUntil[index] + Math.max(0, slowDuration));
+        this._frostSpeedRatios[index] = Math.max(0.1, Math.min(1, wasSlowed
+            ? Math.min(this._frostSpeedRatios[index], ratio) : ratio));
+    }
+
+    private frostSpeedRatio (index: number): number {
+        if (this._frozenUntil[index] > this._elapsedBattleTime) return 0;
+        return this._slowedUntil[index] > this._elapsedBattleTime ? this._frostSpeedRatios[index] : 1;
+    }
+
     public queryEnemiesAlongSegment (
         startX: number,
         startY: number,
@@ -887,6 +1199,45 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         hitIndices.sort((first, second) => this._segmentHitTimes[first]
             - this._segmentHitTimes[second] || this._monsterIds[first] - this._monsterIds[second]);
         for (const index of hitIndices) results.push(this._monsterIds[index]);
+    }
+
+    public getCombatViewport (out: Rect): boolean {
+        const viewport = this.node.getComponent(UITransform);
+        if (!viewport || !this._renderTransform) return false;
+        const visible = view.getVisibleSize();
+        if (visible.width <= 0 || visible.height <= 0) return false;
+        this._rainViewportMin.set(-visible.width * 0.5, -visible.height * 0.5, 0);
+        this._rainViewportMax.set(visible.width * 0.5, visible.height * 0.5, 0);
+        viewport.convertToWorldSpaceAR(this._rainViewportMin, this._rainViewportWorld);
+        this._renderTransform.convertToNodeSpaceAR(this._rainViewportWorld, this._rainViewportMin);
+        viewport.convertToWorldSpaceAR(this._rainViewportMax, this._rainViewportWorld);
+        this._renderTransform.convertToNodeSpaceAR(this._rainViewportWorld, this._rainViewportMax);
+        out.x = Math.min(this._rainViewportMin.x, this._rainViewportMax.x);
+        out.y = Math.min(this._rainViewportMin.y, this._rainViewportMax.y);
+        out.width = Math.abs(this._rainViewportMax.x - this._rainViewportMin.x);
+        out.height = Math.abs(this._rainViewportMax.y - this._rainViewportMin.y);
+        return Number.isFinite(out.x + out.y + out.width + out.height) && out.width > 0 && out.height > 0;
+    }
+
+    public queryEnemiesInRect (bounds: Rect, results: EnemyId[]): void {
+        results.length = 0;
+        if (!this._renderTransform || bounds.width <= 0 || bounds.height <= 0) return;
+        const halfWidth = this._renderTransform.width * 0.5;
+        const halfHeight = this._renderTransform.height * 0.5;
+        const left = Math.max(-halfWidth, bounds.x);
+        const right = Math.min(halfWidth, bounds.x + bounds.width);
+        const bottom = Math.max(-halfHeight, bounds.y);
+        const top = Math.min(halfHeight, bounds.y + bounds.height);
+        if (left >= right || bottom >= top) return;
+        const padding = this._maximumHitQueryExtent + NORMAL_HIT_RADIUS;
+        this.forEachMonsterInArea(left - padding, right + padding, bottom - padding, top + padding, index => {
+            const x = this._positionsX[index];
+            const y = this.getMonsterHitY(index);
+            const radius = this.getMonsterDefinition(index).hitRadius;
+            const dx = Math.max(left - x, 0, x - right);
+            const dy = Math.max(bottom - y, 0, y - top);
+            if (dx * dx + dy * dy <= radius * radius) results.push(this._monsterIds[index]);
+        });
     }
 
     public queryEnemiesInCircle (
@@ -956,6 +1307,8 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
         const monster = this.getMonsterDefinition(index);
         if (monster.rank === MonsterRank.Boss) return false;
+        const cottonSkill = monster.rank === MonsterRank.Elite ? this._cottonSkills.get(enemyId) : undefined;
+        if (cottonSkill && cottonSkill.phase !== 'pursue') return false;
         const safeStopRadius = Math.max(0, stopRadius)
             + Math.max(0, monster.bodyRadius - NORMAL_BODY_RADIUS);
         if (distance <= safeStopRadius || distance < 0.001) return true;
@@ -989,8 +1342,15 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         return true;
     }
 
+    public executeEnemy (enemyId: EnemyId, sourceAbilityId: string): boolean {
+        const index = this._monsterIndexById.get(enemyId);
+        if (index === undefined) return false;
+        // Finite remaining HP uses the existing death/reward path, without consuming kill reserve.
+        return this.applyDamage(enemyId, { amount: this._health[index], sourceAbilityId, isPrimaryAttack: false });
+    }
+
     public applyDamage (enemyId: EnemyId, damage: DamageInfo): boolean {
-        if (this._isChoosingUpgrade || this._battleEnded) return false;
+        if (this._isChoosingUpgrade && !this._castingPotion || this._battleEnded) return false;
 
         const index = this._monsterIndexById.get(enemyId);
         if (index === undefined || !Number.isFinite(damage.amount) || damage.amount <= 0) return false;
@@ -1031,6 +1391,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         const appliedDamage = Math.min(this._health[index], amount);
         const damageY = this.getMonsterHitY(index) + Math.max(48, monster.hitRadius);
         this._health[index] -= amount;
+        if (monster.prefabKey) this._prefabVisuals?.setHealth(enemyId, this._health[index]);
         this._hitFlashEndTimes[index] = this._elapsedBattleTime
             + Math.max(0, this.monsterHitFlashDuration);
         this._damageNumberRenderer?.showDamage(
@@ -1040,9 +1401,11 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             damage.sourceAbilityId,
         );
         if (this._health[index] <= 0) {
+            const deathX = this._positionsX[index];
+            const deathY = this._positionsY[index];
             this.removeMonster(index);
             if (enemyId === this._focusTarget) this.clearFocus();
-            this.registerKill(monster);
+            this.registerKill(monster, deathX, deathY);
         }
         return true;
     }
@@ -1064,6 +1427,38 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         this._targetMover?.resetHitFeedback();
         this._damageNumberRenderer = this.renderLayer.parent
             ?.getComponentInChildren(DamageNumberBatchRenderer) ?? null;
+        this._lootDrops = this.lootLayerNode?.getComponent(LootDropSystem) ?? null;
+        if (!this._lootDrops) {
+            console.error('[MonsterCrowdController] 请配置带有 LootDropSystem 的死亡掉落层。');
+            this.enabled = false;
+            return;
+        }
+
+        if (!this.groundEffectLayer || this.groundEffectLayer === this.renderLayer
+            || this.groundEffectLayer.parent !== this.renderLayer.parent) {
+            console.error('[MonsterCrowdController] 请配置与怪物层同级的地面特效层。');
+            this.enabled = false;
+            return;
+        }
+        // Both layers use crowd-local coordinates and follow the same scrolling ground.
+        this.groundEffectLayer.setPosition(this.renderLayer.position);
+        this.groundEffectLayer.setRotation(this.renderLayer.rotation);
+        this.groundEffectLayer.setScale(this.renderLayer.scale);
+        this.groundEffectLayer.setSiblingIndex(0);
+        if (!this.skillEffectLayer || this.skillEffectLayer === this.renderLayer
+            || this.skillEffectLayer === this.groundEffectLayer
+            || this.skillEffectLayer.parent !== this.renderLayer.parent) {
+            console.error('[MonsterCrowdController] 请配置与怪物层同级的技能特效层。');
+            this.enabled = false;
+            return;
+        }
+        this.skillEffectLayer.setPosition(this.renderLayer.position);
+        this.skillEffectLayer.setRotation(this.renderLayer.rotation);
+        this.skillEffectLayer.setScale(this.renderLayer.scale);
+        // Ground decals < combatants < spell flashes < damage numbers < HUD.
+        this.skillEffectLayer.setSiblingIndex(-1);
+        this._damageNumberRenderer?.node.setSiblingIndex(-1);
+        this._lootDrops.clear();
         if (this.upgradePanelNode) {
             this._upgradePanel = this.upgradePanelNode.getComponent(UpgradeSelectionPanel);
         }
@@ -1093,6 +1488,9 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         this._bypassLeftAllowed = new Uint8Array(this._capacity);
         this._bypassRightAllowed = new Uint8Array(this._capacity);
         this._moveSpeedMultipliers = new Float32Array(this._capacity);
+        this._frozenUntil = new Float32Array(this._capacity);
+        this._slowedUntil = new Float32Array(this._capacity);
+        this._frostSpeedRatios = new Float32Array(this._capacity);
         this._targetSnapshotsX = new Float32Array(this._capacity);
         this._targetSnapshotsY = new Float32Array(this._capacity);
         this._targetOffsetsX = new Float32Array(this._capacity);
@@ -1112,7 +1510,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         if (this.mossStoneKingPrefab) {
             prefabs.set('moss-stone-king', this.mossStoneKingPrefab);
         }
-        this._prefabVisuals = new MonsterPrefabVisuals(this.renderLayer, prefabs);
+        this._prefabVisuals = new MonsterPrefabVisuals(this.renderLayer, prefabs, this.groundEffectLayer);
         for (const monster of DEFAULT_MONSTER_LEVEL.monsters) {
             if (monster.prefabKey && !this._prefabVisuals.hasPrefab(monster.prefabKey)) {
                 console.error(`[MonsterCrowdController] Missing enemy prefab: ${monster.prefabKey}`);
@@ -1136,9 +1534,11 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         );
         this._abilityController = new AbilityController();
         this._learnedSkills.clear();
+        this._elementalOptions.clear();
         this._basicAttackOptions = null;
         this._piercingArrowOptions = null;
         this._qiBladeOptions = null;
+        this._swordQiOptions = null;
         this._tornadoOptions = null;
 
         const gameSettings = this.node.getComponentInChildren(GameSettings);
@@ -1150,7 +1550,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         }
         this._initialMaximumHealth = this._characterStats?.maximumHealth ?? 100;
         this._baseAttackPower = this._characterStats?.attackPower ?? 1;
-        this._progression.reset(initialSkill, ALL_GAME_SKILLS.filter(skill => this.hasSkillAsset(skill)));
+        this._progression.reset(initialSkill, ALL_GAME_SKILLS.filter(skill => this.isRegularSkill(skill) && this.hasSkillAsset(skill)));
         this.syncProgression();
         const scene = this.node.scene;
         this._uiManager = scene?.getComponentInChildren(UIManager) ?? null;
@@ -1160,6 +1560,21 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         this._characterStats?.node.on(CharacterStats.Event.Died, this.onPlayerDied, this);
         this._characterStats?.node.on(CharacterStats.Event.Damaged, this.onPlayerDamaged, this);
         this.updateCountLabel();
+        this._homePanel = scene.getComponentInChildren(HomePanel);
+        this._expeditionHud = scene.getComponentInChildren(ExpeditionHud);
+        this._potionMenu = scene.getComponentInChildren(PotionMenu);
+        this._potionMenu?.hide();
+        this.setBattlePaused(true);
+        if (this._hud) this._hud.node.active = false;
+        if (this.countLabelNode) this.countLabelNode.active = false;
+        if (this._expeditionHud) this._expeditionHud.node.active = false;
+        if (!this._homePanel || !this._expeditionHud || !this._potionMenu) {
+            console.error('[MonsterCrowdController] 请配置归梦小院、药水栏和药水操作面板。');
+            return;
+        }
+        this._expeditionHud.configure(index => this.openPotion(index), () => this.openReturnHome());
+        this._homePanel.configure(charm => this.beginExpedition(charm));
+        this._homePanel.node.active = true;
     }
 
     protected lateUpdate (dt: number): void {
@@ -1168,11 +1583,13 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             0, this._monsterDeathSoundCooldown - Math.max(0, dt),
         );
         if (this._batches.length === 0 || !this._renderTransform || !this.target) return;
-        if (this._battleEnded || this._isChoosingUpgrade) return;
+        if (this._homeOpen || this._battleEnded || this._isChoosingUpgrade) return;
         this.processGrowthQueue();
         if (this._isChoosingUpgrade) return;
 
         const frameDt = Math.min(Math.max(dt, 0), 0.1);
+        this._potionGap = Math.max(0, this._potionGap - frameDt);
+        this._lootNoticeTime = Math.max(0, this._lootNoticeTime - frameDt);
         const simulationDt = Math.min(frameDt, 1 / 30);
         this._prefabVisuals?.advance(frameDt);
         this._elapsedBattleTime += frameDt;
@@ -1184,7 +1601,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         this.spawnMonsters(frameDt);
 
         if (this._count > 0) {
-            this.updateBossAttacks();
+            this.updateBossAttacks(frameDt);
             if (this._battleEnded) return;
             this.ensureGrid();
             this.calculateVelocities(
@@ -1209,8 +1626,16 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         this._abilityFrameContext.facingX = this._facingDirection.x;
         this._abilityFrameContext.facingY = this._facingDirection.y;
         this._abilityController?.update(frameDt, this._abilityFrameContext);
+        this._potionEffects?.advance(frameDt, this._abilityFrameContext);
         this._projectileSystem?.update(simulationDt);
         this.flushMonsterDeathSound();
+
+        this._lootCollectedThisFrame = false;
+        this._lootDrops?.advance(frameDt, this.target.worldPosition, this._collectLoot, this._canCollectLoot);
+        if (this._lootEquipmentChanged) {
+            this._lootEquipmentChanged = false;
+            this.syncProgression();
+        } else if (this._lootCollectedThisFrame) this.refreshProgressionUI();
 
         this.syncRenderData();
         this.updateCountLabel();
@@ -1224,15 +1649,20 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
 
     protected onDestroy (): void {
         this._battleEnded = true;
-        this._characterStats?.node.off(CharacterStats.Event.Died, this.onPlayerDied, this);
-        this._characterStats?.node.off(CharacterStats.Event.Damaged, this.onPlayerDamaged, this);
+        this._potionEffects?.destroy();
+        // During scene reload, the player's component may outlive its already-destroyed node.
+        this._characterStats?.node?.off(CharacterStats.Event.Died, this.onPlayerDied, this);
+        this._characterStats?.node?.off(CharacterStats.Event.Damaged, this.onPlayerDamaged, this);
         this._uiManager?.closePopup('UI/CheatPanel');
         this._prefabVisuals?.clear();
         this._bossAttacks.clear();
         this._bossNextAttackTimes.clear();
+        this._cottonSkills.clear();
+        this._summonedMonsters.clear();
         this._targetMover?.resetHitFeedback();
         this._projectileSystem?.clear();
         this._abilityController?.clear();
+        if (this._lootDrops?.isValid) this._lootDrops.clear();
     }
 
     private getInitialSkill (gameSettings: GameSettings | null): GameSkill | null {
@@ -1247,7 +1677,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         });
         const configuredSkills = gameSettings?.initialSkills ?? legacySkills;
         const uniqueSkills = configuredSkills.filter(
-            (skill, index) => ALL_GAME_SKILLS.includes(skill)
+            (skill, index) => this.isRegularSkill(skill) && ALL_GAME_SKILLS.includes(skill)
                 && configuredSkills.indexOf(skill) === index,
         );
         if (uniqueSkills.length > 1) {
@@ -1256,7 +1686,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
 
         const configuredSkill = uniqueSkills.find((skill) => this.hasSkillAsset(skill));
         return configuredSkill
-            ?? ALL_GAME_SKILLS.find((skill) => this.hasSkillAsset(skill))
+            ?? ALL_GAME_SKILLS.find((skill) => this.isRegularSkill(skill) && this.hasSkillAsset(skill))
             ?? null;
     }
 
@@ -1266,6 +1696,10 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         case GameSkill.PiercingArrow: return Boolean(this.arrowPrefab);
         case GameSkill.QiBlade: return Boolean(this.qiBladePrefab);
         case GameSkill.Tornado: return Boolean(this.tornadoPrefab);
+        case GameSkill.Thunder: return Boolean(this.thunderPrefab);
+        case GameSkill.ChainLightning: return Boolean(this.chainLightningPrefab);
+        case GameSkill.FrostPulse: return Boolean(this.frostPulsePrefab);
+        case GameSkill.SwordQi: return Boolean(this.swordQiPrefab);
         default: return false;
         }
     }
@@ -1278,6 +1712,28 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
 
         const getAttackPower = (): number => this._baseAttackPower * (1 + this._growthDamageBonus);
         switch (skill) {
+        case GameSkill.SwordQi: {
+            if (!this.swordQiPrefab || !this.skillEffectLayer) return false;
+            const options: SwordQiAbilityOptions = { prefab: this.swordQiPrefab,
+                visualParent: this.skillEffectLayer, level: 1, evolved: false, getAttackPower };
+            this._swordQiOptions = options;
+            this._abilityController.addAbility(new SwordQiAbility(this, options));
+            break;
+        }
+        case GameSkill.Thunder:
+        case GameSkill.ChainLightning:
+        case GameSkill.FrostPulse: {
+            const prefab = skill === GameSkill.Thunder ? this.thunderPrefab
+                : skill === GameSkill.ChainLightning ? this.chainLightningPrefab : this.frostPulsePrefab;
+            if (!prefab || !this.skillEffectLayer || !this.groundEffectLayer) return false;
+            const options: ElementalAbilityOptions = { kind: ABILITY_IDS[skill] as ElementalKind,
+                prefab, visualParent: this.skillEffectLayer, groundParent: this.groundEffectLayer,
+                level: 1, evolved: false, getAttackPower,
+                playSound: (kind, echo) => this.elementalAudio?.play(kind, echo) };
+            this._elementalOptions.set(skill, options);
+            this._abilityController.addAbility(new ElementalAbility(this, options));
+            break;
+        }
         case GameSkill.BasicAttack: {
             if (!this.bulletPrefab) return false;
             const options: BasicAttackAbilityOptions = {
@@ -1328,6 +1784,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             const options: QiBladeAbilityOptions = {
                 prefab: this.qiBladePrefab,
                 visualParent: this.renderLayer,
+                orbitRadius: this.qiBladeOrbitRadius,
                 hitRadius: this.qiBladeHitRadius,
                 damageInterval: this.qiBladeDamageInterval,
                 rotationSpeed: this.qiBladeRotationSpeed,
@@ -1530,6 +1987,8 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         this._prefabVisuals?.die(removedId);
         this._bossAttacks.delete(removedId);
         this._bossNextAttackTimes.delete(removedId);
+        this._cottonSkills.delete(removedId);
+        this._summonedMonsters.delete(removedId);
         this._monsterIndexById.delete(removedId);
 
         if (this.isGridValid()) {
@@ -1560,6 +2019,9 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             this._bypassSides[index] = this._bypassSides[lastIndex];
             this._bypassBlockerIds[index] = this._bypassBlockerIds[lastIndex];
             this._moveSpeedMultipliers[index] = this._moveSpeedMultipliers[lastIndex];
+            this._frozenUntil[index] = this._frozenUntil[lastIndex];
+            this._slowedUntil[index] = this._slowedUntil[lastIndex];
+            this._frostSpeedRatios[index] = this._frostSpeedRatios[lastIndex];
             this._targetSnapshotsX[index] = this._targetSnapshotsX[lastIndex];
             this._targetSnapshotsY[index] = this._targetSnapshotsY[lastIndex];
             this._targetOffsetsX[index] = this._targetOffsetsX[lastIndex];
@@ -1594,7 +2056,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 ? `　经验：${progress.experience} / ${progress.nextLevelExperience}` : '　等级已满');
     }
 
-    private registerKill (monster: MonsterDefinition): void {
+    private registerKill (monster: MonsterDefinition, x: number, y: number): void {
         this._totalKillCount++;
         if (this._cores.has('kill_reserve') && !this._reserveReady) {
             this._reserveKills++;
@@ -1603,19 +2065,102 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 this._reserveKills = 0;
             }
         }
+        let evolution = false;
         if (monster.rank === MonsterRank.Elite) {
-            this._progression.addExperience(20);
             if (!this._eliteRewarded) {
                 this._eliteRewarded = true;
-                this._progression.grantEvolution();
-                this._characterStats?.heal(this._characterStats.maximumHealth * 0.15);
+                evolution = true;
             }
         } else if (monster.rank === MonsterRank.Normal) {
             this._pendingMonsterDeathSound = true;
-            this._progression.addExperience(1);
         }
-        // Choices start after the simulation frame, so an area attack finishes atomically.
+        const experience = monster.rank === MonsterRank.Elite ? this.eliteDropExperience
+            : monster.rank === MonsterRank.Boss ? this.bossDropExperience : this.normalDropExperience;
+        this.spawnLootAt(x, y, {
+            experience: Math.max(0, Math.floor(experience)), evolution, tier: monster.rank,
+        });
+        const multiplier = monster.rank === MonsterRank.Boss ? this.bossRareDropMultiplier
+            : monster.rank === MonsterRank.Elite ? this.eliteRareDropMultiplier : 1;
+        if (Math.random() < this.rareDropProbability(this.chestDropChance, multiplier)) {
+            this.spawnLootAt(x - 42, y + 18, { kind: 'chest', experience: 0, evolution: false, tier: monster.rank });
+        }
+        if (Math.random() < this.rareDropProbability(this.equipmentDropChance, multiplier)) {
+            this.spawnLootAt(x + 42, y + 18, { kind: 'equipment', experience: 0, evolution: false, tier: monster.rank });
+        }
+        const elite = monster.rank === MonsterRank.Elite;
+        const boss = monster.rank === MonsterRank.Boss;
+        if (Math.random() < (boss ? 0.5 : elite ? 0.2 : 0.012)) {
+            const roll = Math.random();
+            this.spawnLootAt(x - 28, y - 30, { kind: 'potion', potion: roll < 0.4 ? 'healing'
+                : roll < 0.55 ? 'storm' : roll < 0.7 ? 'frost' : roll < 0.85 ? 'earth-rift' : 'rain',
+                experience: 0, evolution: false, tier: monster.rank });
+        }
+        if (Math.random() < (boss ? 1 : elite ? 0.5 : 0.05)) {
+            this.spawnLootAt(x + 28, y - 30, { kind: 'sand', stacks: boss ? 15 : elite ? 5 : 1,
+                experience: 0, evolution: false, tier: monster.rank });
+        }
+        // Kill effects happen immediately; growth rewards only enter the queue on pickup.
         this.updateCountLabel();
+    }
+
+    private rareDropProbability (percent: number, multiplier: number): number {
+        const value = percent * multiplier / 100;
+        return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+    }
+
+    private spawnLootAt (x: number, y: number, reward: LootReward): void {
+        // Edge kills must leave reachable loot inside the playable area.
+        const halfWidth = Math.max(0, this._renderTransform!.width * 0.5 - 24);
+        const halfHeight = Math.max(0, this._renderTransform!.height * 0.5 - 24);
+        this._lootPosition.set(Math.max(-halfWidth, Math.min(halfWidth, x)),
+            Math.max(-halfHeight, Math.min(halfHeight, y)), 0);
+        this._renderTransform!.convertToWorldSpaceAR(this._lootPosition, this._lootWorldPosition);
+        this._lootDrops?.spawn(this._lootWorldPosition, reward);
+    }
+
+    private collectRareLoot (reward: LootReward): void {
+        const stats = this._characterStats;
+        let experience = 0;
+        let healing = 0;
+        let strengthened = 0;
+        let shield = 0;
+        let lastStrengthening = '';
+        const stacks = Math.max(1, Math.floor(reward.stacks ?? 1));
+        for (let i = 0; i < stacks; i++) {
+            if (reward.kind === 'equipment') {
+                const effect = this._progression.grantEquipmentReward(this.getGrowthHealth(),
+                    value => this.applyGrowthEffect(value));
+                if (effect) {
+                    strengthened++;
+                    lastStrengthening = effect.type === 'damage' ? '火力 +8%'
+                        : effect.type === 'maximum-health' ? `最大生命 +${Math.ceil(effect.amount ?? 0)}`
+                            : `${SKILL_NAMES[effect.skill!]} Lv.${effect.level}`;
+                    this._lootEquipmentChanged = true;
+                } else {
+                    shield += (stats?.maximumHealth ?? 100) * 0.15;
+                }
+            } else {
+                const health = this.getGrowthHealth();
+                if (stats && health.current < health.maximum && Math.random() < 0.5) {
+                    healing += stats.heal(stats.maximumHealth * 0.25);
+                } else if (this._progression.canEarnExperience) {
+                    experience += 20;
+                    this._progression.addExperience(20);
+                } else {
+                    shield += (stats?.maximumHealth ?? 100) * 0.15;
+                }
+            }
+        }
+        const requestedShield = shield;
+        if (shield > 0) shield = stats?.addShield('rare_loot', shield, 0.15) ?? 0;
+        const details: string[] = [];
+        if (experience > 0) details.push(`经验 +${experience}`);
+        if (healing > 0) details.push(`恢复 ${Math.ceil(healing)} 生命`);
+        if (strengthened > 0) details.push(strengthened === 1 ? lastStrengthening : `获得 ${strengthened} 次强化`);
+        if (shield > 0) details.push(`护盾 +${Math.ceil(shield)}`);
+        else if (requestedShield > 0) details.push('护盾已满');
+        this._lootNotice = `${reward.kind === 'chest' ? '宝箱' : '装备'}：${details.join('，')}`;
+        this._lootNoticeTime = 4;
     }
 
     private flushMonsterDeathSound (): void {
@@ -1654,7 +2199,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         }
     }
 
-    private spawnOne (command: MonsterSpawnBatchCommand): void {
+    private spawnOne (command: MonsterSpawnBatchCommand, exactPosition?: Vec2): void {
         if (!this._renderTransform || this._count >= this._capacity) return;
 
         const visibleSize = view.getVisibleSize();
@@ -1708,6 +2253,12 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 this._targetLocal.y + command.targetOffset.y));
         }
 
+        if (exactPosition) {
+            // Summon positions were clamped and telegraphed before the cast resolved.
+            x = exactPosition.x;
+            y = exactPosition.y;
+        }
+
         this._positionsX[this._count] = x;
         this._positionsY[this._count] = y;
         this._velocitiesX[this._count] = 0;
@@ -1715,6 +2266,9 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         this._bypassSides[this._count] = 0;
         this._bypassBlockerIds[this._count] = 0;
         this._moveSpeedMultipliers[this._count] = entrance.moveSpeedMultiplier;
+        this._frozenUntil[this._count] = 0;
+        this._slowedUntil[this._count] = 0;
+        this._frostSpeedRatios[this._count] = 1;
         this._monsterTypeIndices[this._count] = command.monsterTypeIndex;
         this._health[this._count] = this.getMonsterHealth(monster.maximumHealth);
         this._hitFlashEndTimes[this._count] = 0;
@@ -1722,6 +2276,8 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         if (monster.prefabKey
             && !this._prefabVisuals?.spawn(
                 monsterId, monster.prefabKey, x, y, monster.deathAnimationDuration,
+                this._health[this._count],
+                monster.rank !== MonsterRank.Elite,
             )) return;
         const angle = this.getMonsterHashRatio(monsterId, 0x68bc21eb) * Math.PI * 2;
         const radiusRatio = this.getMonsterHashRatio(monsterId, 0x02e5be93);
@@ -1881,6 +2437,15 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 this._velocitiesY[i] = 0;
                 continue;
             }
+            const cottonSkill = monster.rank === MonsterRank.Elite
+                ? this._cottonSkills.get(this._monsterIds[i]) : undefined;
+            if (cottonSkill && cottonSkill.phase !== 'pursue') {
+                this._velocitiesX[i] = 0;
+                this._velocitiesY[i] = 0;
+                this._bypassBlockerIds[i] = 0;
+                this._bypassSides[i] = 0;
+                continue;
+            }
             const bodyExpansion = Math.max(0, monster.bodyRadius - NORMAL_BODY_RADIUS);
             const stopDistance = this.stopRadius + bodyExpansion;
             this._targetRefreshTimers[i] -= dt;
@@ -1908,7 +2473,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             }
 
             const targetDistance = Math.sqrt(targetDistanceSquared);
-            const speed = monster.moveSpeed * this._moveSpeedMultipliers[i];
+            const speed = monster.moveSpeed * this._moveSpeedMultipliers[i] * this.frostSpeedRatio(i);
             this._maximumMovementSpeed = Math.max(this._maximumMovementSpeed, speed);
             let directionX = deltaX / targetDistance;
             let directionY = deltaY / targetDistance;
@@ -2026,7 +2591,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 const dy = this._positionsY[blocker] - this._positionsY[i];
                 const distanceSquared = dx * dx + dy * dy;
                 if (distanceSquared > 0.000001) {
-                    const speed = this.getMonsterDefinition(i).moveSpeed * this._moveSpeedMultipliers[i];
+                    const speed = this.getMonsterDefinition(i).moveSpeed * this._moveSpeedMultipliers[i] * this.frostSpeedRatio(i);
                     const scale = speed / Math.sqrt(distanceSquared);
                     this._bypassVelocitiesX[i] = -dy * scale;
                     this._bypassVelocitiesY[i] = dx * scale;
@@ -2227,9 +2792,14 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 && this._monsterIds[first] < this._monsterIds[second];
     }
 
-    private updateBossAttacks (): void {
+    private updateBossAttacks (dt: number): void {
         for (let index = 0; index < this._count; index++) {
             const monster = this.getMonsterDefinition(index);
+            if (monster.prefabKey === 'cotton-king-simple') {
+                this.updateCottonSkills(index, dt);
+                if (this._battleEnded) return;
+                continue;
+            }
             if (monster.rank !== MonsterRank.Boss) continue;
 
             const enemyId = this._monsterIds[index];
@@ -2267,7 +2837,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             this._bossAttacks.set(enemyId, state);
             const started = this._prefabVisuals?.playAttack(enemyId, dx,
                 () => { state.impactPending = true; },
-                () => { state.completed = true; });
+                () => { state.completed = true; }, Math.max(1, this.bossImpactRadius));
             if (!started) {
                 this._bossAttacks.delete(enemyId);
                 this._bossNextAttackTimes.set(enemyId, this._elapsedBattleTime + 1);
@@ -2276,6 +2846,166 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             this._velocitiesX[index] = 0;
             this._velocitiesY[index] = 0;
         }
+    }
+
+    private updateCottonSkills (index: number, dt: number): void {
+        const id = this._monsterIds[index];
+        let state = this._cottonSkills.get(id);
+        if (!state) {
+            if (!this.isMonsterInsideCombatBounds(index)) return;
+            state = {
+                phase: 'enter', remaining: 1.5, nextSummon: true, summonedTotal: 0,
+                summonCount: 0, summonResolved: false,
+                points: Array.from({ length: COTTON_SUMMON_BATCH }, () => new Vec2()),
+                startX: 0, startY: 0, endX: 0, endY: 0, hitRadius: 0, damageApplied: false,
+            };
+            this._cottonSkills.set(id, state);
+            this._prefabVisuals?.playSkill(id, 'enter');
+            this._prefabVisuals?.playSkillEffect(id, 'RecoverDust');
+            return;
+        }
+        state.remaining = Math.max(0, state.remaining - dt);
+        if (state.phase === 'charge') {
+            this._prefabVisuals?.updateRollWarning(id, 1 - state.remaining / 1.5);
+        }
+        if (state.phase === 'roll') {
+            const previousX = this._positionsX[index];
+            const previousY = this._positionsY[index];
+            const progress = 1 - state.remaining / COTTON_ROLL_DURATION;
+            const x = state.startX + (state.endX - state.startX) * progress;
+            const y = state.startY + (state.endY - state.startY) * progress;
+            this._positionsX[index] = x;
+            this._positionsY[index] = y;
+            this._gridValid = false;
+            const sx = x - previousX;
+            const sy = y - previousY;
+            const lengthSquared = sx * sx + sy * sy;
+            const t = lengthSquared > 0.000001 ? Math.max(0, Math.min(1,
+                ((this._targetLocal.x - previousX) * sx + (this._targetLocal.y - previousY) * sy)
+                    / lengthSquared)) : 0;
+            const dx = this._targetLocal.x - previousX - sx * t;
+            const dy = this._targetLocal.y - previousY - sy * t;
+            if (!state.damageApplied && dx * dx + dy * dy <= state.hitRadius * state.hitRadius) {
+                state.damageApplied = this.applyPlayerHit(index, true);
+            }
+        } else if (state.phase === 'summon' && !state.summonResolved && state.remaining <= 0.3) {
+            state.summonResolved = true;
+            for (let i = 0; i < state.summonCount; i++) {
+                const point = state.points[i];
+                const dx = point.x - this._targetLocal.x;
+                const dy = point.y - this._targetLocal.y;
+                const previousCount = this._count;
+                // Recheck at resolution: a player who moved into a marker is never body-spawned on.
+                if (this._summonedMonsters.size < COTTON_SUMMON_LIMIT && dx * dx + dy * dy >= 120 * 120) {
+                    this.spawnOne(this._summonCommand, point);
+                }
+                const spawned = this._count > previousCount;
+                if (spawned) {
+                    this._summonedMonsters.add(this._monsterIds[this._count - 1]);
+                    state.summonedTotal++;
+                }
+                this._prefabVisuals?.emitSummonPoint(id, i, spawned);
+            }
+        }
+        if (state.remaining > 0 || this._battleEnded) return;
+        switch (state.phase) {
+        case 'enter':
+        case 'recover':
+            state.phase = 'pursue';
+            state.remaining = state.nextSummon && state.summonedTotal === 0 ? 0.4 : 2;
+            this._prefabVisuals?.finishSkill(id);
+            this._targetRefreshTimers[index] = 0;
+            break;
+        case 'pursue': {
+            const dx = this._targetLocal.x - this._positionsX[index];
+            const dy = this._targetLocal.y - this._positionsY[index];
+            if (!this.isMonsterInsideCombatBounds(index) || dx * dx + dy * dy > 850 * 850) break;
+            if (state.nextSummon && this.prepareCottonSummon(index, state)) {
+                state.phase = 'summon';
+                state.remaining = 1;
+                state.nextSummon = false;
+                this._prefabVisuals?.playSkill(id, 'summon', dx);
+                this._prefabVisuals?.playSkillEffect(id, 'SummonAura');
+                this._prefabVisuals?.showSummonPoints(id, state.points, state.summonCount,
+                    this._positionsX[index], this._positionsY[index]);
+            } else {
+                this.prepareCottonRoll(index, state, dx, dy);
+            }
+            break;
+        }
+        case 'summon':
+            this._prefabVisuals?.stopSkillEffect(id, 'SummonAura');
+            state.phase = 'recover';
+            state.remaining = 1;
+            this._prefabVisuals?.playSkill(id, 'recover');
+            break;
+        case 'charge':
+            state.phase = 'roll';
+            state.remaining = COTTON_ROLL_DURATION;
+            this._prefabVisuals?.hideRollWarning(id);
+            this._prefabVisuals?.stopSkillEffect(id, 'Charge');
+            this._prefabVisuals?.playSkill(id, 'roll');
+            this._prefabVisuals?.playSkillEffect(id, 'RollDust');
+            break;
+        case 'roll':
+            state.phase = 'recover';
+            state.remaining = 3;
+            state.nextSummon = true;
+            this._prefabVisuals?.stopSkillEffect(id, 'RollDust');
+            this._prefabVisuals?.playSkillEffect(id, 'RecoverDust');
+            this._prefabVisuals?.playSkill(id, 'recover');
+            break;
+        }
+    }
+
+    private prepareCottonSummon (index: number, state: CottonSkillState): boolean {
+        const available = Math.min(COTTON_SUMMON_BATCH, this._capacity - this._count,
+            COTTON_SUMMON_LIMIT - this._summonedMonsters.size,
+            COTTON_SUMMON_LIMIT - state.summonedTotal);
+        state.summonCount = 0;
+        state.summonResolved = false;
+        if (available <= 0) return false;
+        const x = this._positionsX[index];
+        const y = this._positionsY[index];
+        const away = Math.atan2(y - this._targetLocal.y, x - this._targetLocal.x);
+        for (let attempt = 0; attempt < 12 && state.summonCount < available; attempt++) {
+            const angle = away + (attempt % 2 ? 1 : -1) * Math.ceil(attempt / 2) * Math.PI / 6;
+            const point = state.points[state.summonCount];
+            point.set(x + Math.cos(angle) * 210, y + Math.sin(angle) * 210);
+            this.clampAbilityPosition(point, 60);
+            if ((point.x - this._targetLocal.x) ** 2 + (point.y - this._targetLocal.y) ** 2 < 180 ** 2) continue;
+            let overlapping = false;
+            for (let i = 0; i < state.summonCount; i++) {
+                if ((point.x - state.points[i].x) ** 2 + (point.y - state.points[i].y) ** 2 < 80 ** 2) {
+                    overlapping = true;
+                    break;
+                }
+            }
+            if (!overlapping) state.summonCount++;
+        }
+        return state.summonCount > 0;
+    }
+
+    private prepareCottonRoll (index: number, state: CottonSkillState, dx: number, dy: number): void {
+        const id = this._monsterIds[index];
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const length = Math.min(520, Math.max(260, distance + 120));
+        state.startX = this._positionsX[index];
+        state.startY = this._positionsY[index];
+        this._skillPosition.set(state.startX + (distance > 0.001 ? dx / distance : 1) * length,
+            state.startY + (distance > 0.001 ? dy / distance : 0) * length);
+        this.clampAbilityPosition(this._skillPosition, this.getMonsterDefinition(index).bodyRadius);
+        state.endX = this._skillPosition.x;
+        state.endY = this._skillPosition.y;
+        state.hitRadius = Math.max(1, this.playerContactRadius)
+            + Math.max(0, this.getMonsterDefinition(index).bodyRadius - NORMAL_BODY_RADIUS);
+        state.damageApplied = false;
+        state.phase = 'charge';
+        state.remaining = 1.5;
+        this._prefabVisuals?.playSkill(id, 'charge', state.endX - state.startX);
+        this._prefabVisuals?.playSkillEffect(id, 'Charge');
+        this._prefabVisuals?.showRollWarning(id,
+            state.endX - state.startX, state.endY - state.startY, state.hitRadius);
     }
 
     private applyPlayerContactDamage (): void {
@@ -2288,6 +3018,11 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         // Contact uses the footprint at the feet, not the offset damage/aim circle.
         for (let index = 0; index < this._count; index++) {
             const monster = this.getMonsterDefinition(index);
+            // The roll uses swept, once-per-action damage. Windup, summon and recovery are safe windows.
+            if (this._frozenUntil[index] > this._elapsedBattleTime) continue;
+            const cottonSkill = monster.rank === MonsterRank.Elite
+                ? this._cottonSkills.get(this._monsterIds[index]) : undefined;
+            if (cottonSkill && cottonSkill.phase !== 'pursue') continue;
             // Touching a large enemy reacts immediately, even during its windup.
             if (monster.rank === MonsterRank.Boss
                 && this._bossAttacks.get(this._monsterIds[index])?.damageApplied) continue;
@@ -2307,9 +3042,9 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
         }
     }
 
-    private applyPlayerHit (sourceIndex: number, heavy: boolean): void {
+    private applyPlayerHit (sourceIndex: number, heavy: boolean): boolean {
         if (!this.target || !this._characterStats?.isAlive
-            || this._elapsedBattleTime < this._nextPlayerDamageTime) return;
+            || this._elapsedBattleTime < this._nextPlayerDamageTime) return false;
 
         // Convert the source into the player's parent space, independent of sprite mirroring.
         this._hitSourceLocal.set(this._positionsX[sourceIndex], this._positionsY[sourceIndex], 0);
@@ -2333,7 +3068,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 elite: monster.rank === MonsterRank.Elite,
             },
         );
-        if (appliedDamage <= 0) return;
+        if (appliedDamage <= 0) return false;
         const attack = this._bossAttacks.get(this._monsterIds[sourceIndex]);
         if (attack) attack.damageApplied = true;
         this._nextPlayerDamageTime = this._elapsedBattleTime
@@ -2344,7 +3079,7 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
             this._targetLocal.y + 72,
             appliedDamage,
         );
-
+        return true;
     }
 
     private syncRenderData (): void {
@@ -2379,6 +3114,8 @@ export class MonsterCrowdController extends Component implements EnemyCombatWorl
                 index & 3,
                 this._velocitiesX[index] < -0.01,
                 hitFlash,
+                this._frozenUntil[index] > this._elapsedBattleTime ? 2
+                    : this._slowedUntil[index] > this._elapsedBattleTime ? 1 : 0,
             );
             normalCount++;
         }

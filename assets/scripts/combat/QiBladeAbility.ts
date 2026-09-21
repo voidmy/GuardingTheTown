@@ -11,6 +11,7 @@ import {
 export interface QiBladeAbilityOptions {
     prefab: Prefab;
     visualParent: Node;
+    orbitRadius: number;
     hitRadius: number;
     damageInterval: number;
     rotationSpeed: number;
@@ -22,6 +23,8 @@ export interface QiBladeAbilityOptions {
 
 interface QiBladeHitbox {
     node: Node;
+    directionX: number;
+    directionY: number;
     offsetX: number;
     offsetY: number;
     initialRotation: number;
@@ -41,6 +44,7 @@ export class QiBladeAbility implements Ability {
     private _rotation = 0;
     private _selfRotation = 0;
     private _activeBladeCount = -1;
+    private _orbitRadius = -1;
 
     constructor (
         private readonly _world: EnemyCombatWorld,
@@ -55,14 +59,17 @@ export class QiBladeAbility implements Ability {
                 console.warn(`[QiBladeAbility] Missing hitbox node: ${nodeName}`);
                 continue;
             }
+            const radius = Math.hypot(blade.position.x, blade.position.y);
             this._hitboxes.push({
                 node: blade,
+                directionX: radius > 0 ? blade.position.x / radius : 0,
+                directionY: radius > 0 ? blade.position.y / radius : 1,
                 offsetX: blade.position.x,
                 offsetY: blade.position.y,
                 initialRotation: blade.eulerAngles.z,
             });
         }
-        this.syncActiveBlades();
+        this.syncBladeLayout();
     }
 
     public updateAbility (dt: number, context: AbilityFrameContext): void {
@@ -72,7 +79,7 @@ export class QiBladeAbility implements Ability {
             + this._options.selfRotationSpeed * frameDt) % 360;
         this._visual.setPosition(context.originX, context.originY, 0);
         this._visual.setRotationFromEuler(0, 0, this._rotation);
-        this.syncActiveBlades();
+        this.syncBladeLayout();
         for (const hitbox of this._hitboxes) {
             if (!hitbox.node.active) continue;
             hitbox.node.setRotationFromEuler(
@@ -142,16 +149,23 @@ export class QiBladeAbility implements Ability {
         }
     }
 
-    private syncActiveBlades (): void {
+    private syncBladeLayout (): void {
         const activeBladeCount = Math.min(
             this._hitboxes.length,
             Math.max(1, this._options.bladeCount | 0),
         );
-        if (activeBladeCount === this._activeBladeCount) return;
+        const orbitRadius = Math.max(1, this._options.orbitRadius);
+        if (activeBladeCount === this._activeBladeCount && orbitRadius === this._orbitRadius) return;
 
         this._activeBladeCount = activeBladeCount;
+        this._orbitRadius = orbitRadius;
         for (let index = 0; index < this._hitboxes.length; index++) {
-            this._hitboxes[index].node.active = index < activeBladeCount;
+            const hitbox = this._hitboxes[index];
+            hitbox.node.active = index < activeBladeCount;
+            // Visuals and damage queries share the same offsets; blade size stays unchanged.
+            hitbox.offsetX = hitbox.directionX * orbitRadius;
+            hitbox.offsetY = hitbox.directionY * orbitRadius;
+            hitbox.node.setPosition(hitbox.offsetX, hitbox.offsetY, hitbox.node.position.z);
         }
     }
 

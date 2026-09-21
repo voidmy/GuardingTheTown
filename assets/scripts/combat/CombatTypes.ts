@@ -1,4 +1,4 @@
-import { Node, Prefab, Vec2 } from 'cc';
+import { Node, Prefab, Rect, Vec2 } from 'cc';
 
 export type EnemyId = number;
 
@@ -27,6 +27,18 @@ export interface WindArea {
 
 export interface EnemyCombatWorld {
     readonly hasEnemies: boolean;
+
+    /** Current camera viewport in combat coordinates, before map clipping. */
+    getCombatViewport (out: Rect): boolean;
+
+    /** Circle bodies touching the visible rectangle, clipped to the playable map. */
+    queryEnemiesInRect (bounds: Rect, results: EnemyId[]): void;
+
+    /** Independent priority targeting; does not alter the focus core's target. */
+    findPriorityEnemy? (x: number, y: number, range: number): EnemyId | null;
+
+    /** Normal enemies freeze, elites only slow, bosses ignore frost control. */
+    applyFrost? (enemyId: EnemyId, freezeDuration: number, slowDuration: number, speedRatio: number): void;
 
     findAttackTarget? (
         originX: number,
@@ -76,6 +88,9 @@ export interface EnemyCombatWorld {
     ): boolean;
 
     applyDamage (enemyId: EnemyId, damage: DamageInfo): boolean;
+
+    /** Lethal potion hit; preserves normal kill rewards and includes elites/bosses. */
+    executeEnemy (enemyId: EnemyId, sourceAbilityId: string): boolean;
 }
 
 export interface AbilityFrameContext {

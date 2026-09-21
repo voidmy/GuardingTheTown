@@ -28,6 +28,8 @@ export interface TornadoAbilityOptions {
     initialDelay?: number;
     spawnDistance?: number;
     playerSafetyRadius?: number;
+    manual?: boolean;
+    sourceAbilityId?: string;
 }
 
 interface TornadoState {
@@ -49,7 +51,7 @@ interface TornadoState {
 }
 
 export class TornadoAbility implements Ability {
-    public readonly id = 'tornado';
+    public readonly id: string;
 
     private readonly _hitResults: EnemyId[] = [];
     private readonly _spawnPosition = new Vec2();
@@ -63,7 +65,13 @@ export class TornadoAbility implements Ability {
         private readonly _world: EnemyCombatWorld,
         private readonly _options: TornadoAbilityOptions,
     ) {
+        this.id = _options.sourceAbilityId ?? 'tornado';
         this._cooldownRemaining = Math.max(0, _options.initialDelay ?? 5);
+    }
+
+    public get isActive (): boolean { return this._active !== null; }
+    public cast (context: AbilityFrameContext): boolean {
+        return !this._destroyed && !this._active && this.spawn(context);
     }
 
     public getActiveWindAreas (): readonly WindArea[] {
@@ -95,6 +103,7 @@ export class TornadoAbility implements Ability {
                 continue;
             }
 
+            if (this._options.manual) return;
             const waitDt = Math.min(remainingDt, this._cooldownRemaining);
             this._cooldownRemaining -= waitDt;
             remainingDt -= waitDt;
@@ -172,7 +181,7 @@ export class TornadoAbility implements Ability {
                 amount: Math.max(0, this._options.damage)
                     * Math.max(0, this._options.getAttackPower?.() ?? 1),
                 sourceAbilityId: this.id,
-                isPrimaryAttack: true,
+                isPrimaryAttack: !this._options.manual,
             },
             pullRadius: Math.max(1, this._options.pullRadius),
             pullSpeed: Math.max(0, this._options.pullSpeed),

@@ -2,6 +2,7 @@ export interface ProgressionSkillView {
     skill: number; name: string; level: number; evolved: boolean; innate: boolean;
 }
 export interface ProgressionSnapshot {
+    elapsedSeconds: number; kills: number; skillLimit: number;
     playerLevel: number; experience: number; experienceToNext: number;
     skills: ProgressionSkillView[];
     cores: Array<{ id: string; name: string }>;
@@ -16,6 +17,7 @@ export interface ProgressionUIController {
     debugGrantEvolution(): void;
     debugMaxAllSkills(): void;
     debugAddMonsters(): number;
+    debugGrantEarthRift(): string;
     openCheats(): void;
     closeCheats(): void;
     openEvolution(): void;

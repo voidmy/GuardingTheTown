@@ -1,0 +1,68 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: rain-vs:vert
+      frag: rain-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        rainState: { value: [0, 0, 0, 0] }
+        rainSize: { value: [3.6, 1.7, 0, 0] }
+}%
+
+CCProgram rain-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #if USE_LOCAL
+    #include <builtin/uniforms/cc-local>
+  #endif
+  in vec3 a_position;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+  out vec2 uv0;
+  out vec4 color;
+  vec4 vert () {
+    vec4 position = vec4(a_position, 1.0);
+    #if USE_LOCAL
+      position = cc_matWorld * position;
+    #endif
+    uv0 = a_texCoord;
+    color = a_color;
+    return cc_matViewProj * position;
+  }
+}%
+
+CCProgram rain-fs %{
+  precision highp float;
+  #include <builtin/internal/embedded-alpha>
+  in vec2 uv0;
+  in vec4 color;
+  uniform RainParams { vec4 rainState; vec4 rainSize; };
+  #pragma builtin(local)
+  layout(set = 2, binding = 11) uniform sampler2D cc_spriteTexture;
+  vec4 frag () {
+    vec2 tiled = uv0 * rainSize.xy;
+    // Two samples of authored PNG rain. No procedural particles, noise or screen capture.
+    vec4 nearRain = CCSampleWithAlphaSeparated(cc_spriteTexture,
+      fract(tiled + vec2(rainState.x * 0.42, -rainState.x * 2.1)));
+    vec4 farRain = CCSampleWithAlphaSeparated(cc_spriteTexture,
+      fract(tiled * 1.18 + vec2(0.37 + rainState.x * 0.27, 0.61 - rainState.x * 1.5)));
+    float nearAlpha = nearRain.a * 0.48 * rainState.y;
+    float farAlpha = farRain.a * 0.23 * rainState.y;
+    float dimAlpha = 0.15 * rainState.z;
+    float alpha = nearAlpha + (1.0 - nearAlpha) * (farAlpha + (1.0 - farAlpha) * dimAlpha);
+    vec3 premultiplied = nearRain.rgb * nearAlpha
+      + (1.0 - nearAlpha) * (farRain.rgb * farAlpha + (1.0 - farAlpha) * vec3(0.025, 0.045, 0.095) * dimAlpha);
+    premultiplied += vec3(0.035, 0.06, 0.08) * nearAlpha * rainState.w;
+    return vec4(premultiplied / max(0.0001, alpha) * color.rgb, alpha * color.a);
+  }
+}%

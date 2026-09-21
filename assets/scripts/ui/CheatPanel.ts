@@ -4,6 +4,9 @@ const { ccclass, menu } = _decorator;
 const SKILLS = [
     { skill:0,name:'基础射击',node:'ShootingRow' },{ skill:1,name:'穿透箭',node:'ArrowRow' },
     { skill:2,name:'气刃',node:'BladeRow' },{ skill:3,name:'小旋风',node:'TornadoRow' },
+    { skill:4,name:'自动落雷',node:'ThunderRow' },{ skill:5,name:'连锁闪电',node:'ChainRow' },
+    { skill:6,name:'寒霜脉冲',node:'FrostRow' },
+    { skill:7,name:'刀气起',node:'SwordQiRow' },
 ] as const;
 interface SkillRow {skill:number;name:string;status:Label;decrease:Button;increase:Button;obtain:Button;evolve:Button;}
 
@@ -58,12 +61,15 @@ export class CheatPanel extends Component {
         if (!this._summary || !this._message || !close || !all || !qualification || !addMonsters
             || rows.some((row) => !row.status || !row.decrease || !row.increase || !row.obtain || !row.evolve)) return false;
         close.node.on(Button.EventType.CLICK,() => this._controller?.closeCheats(),this);
-        all.node.on(Button.EventType.CLICK,() => {this._controller?.debugMaxAllSkills();this.feedback('四个技能已设为 Lv.5');},this);
+        all.node.on(Button.EventType.CLICK,() => {this._controller?.debugMaxAllSkills();this.feedback('全部技能已设为 Lv.5（调试模式忽略3槽限制）');},this);
         qualification.node.on(Button.EventType.CLICK,() => {this._controller?.debugGrantEvolution();this.feedback('已请求进化资格');},this);
         addMonsters.node.on(Button.EventType.CLICK,() => {
             const added = this._controller?.debugAddMonsters() ?? 0;
             this.feedback(added === 100 ? '已添加100只小怪' : added > 0
                 ? `已添加${added}只小怪，已达数量上限` : '当前无法添加小怪或已达数量上限');
+        },this);
+        this.button(content,'GrantEarthRiftButton')?.node.on(Button.EventType.CLICK,() => {
+            this.feedback(this._controller?.debugGrantEarthRift() ?? '战斗尚未就绪');
         },this);
         rows.forEach((row) => {
             this._rows.push(row);

@@ -87,6 +87,9 @@ export class TargetMover extends Component {
     private _knockbackElapsed = 0;
     private _knockbackDistance = 0;
     private _shakeRemaining = 0;
+    private _skillShakeRemaining = 0;
+    private _skillShakeDuration = 0.32;
+    private _skillShakeDistance = 0;
     private readonly _shakeOffset = new Vec2();
 
     public getFacingDirection (out: Vec2): Vec2 {
@@ -166,9 +169,19 @@ export class TargetMover extends Component {
         this._knockbackElapsed = 0;
         this._knockbackDistance = 0;
         this._shakeRemaining = 0;
+        this._skillShakeRemaining = 0;
+        this._skillShakeDistance = 0;
         this._shakeOffset.set(0, 0);
         // Map follow is absolute, so clearing the additive shake cannot leave drift.
         this.followTargetWithMap();
+    }
+
+    /** Skill feedback moves only the map view, never the player or its facing direction. */
+    public playSkillImpact (distance: number, duration: number): void {
+        if (!this.enabledInHierarchy || (this._characterStats && !this._characterStats.isAlive)) return;
+        this._skillShakeDistance = Math.max(0, Math.min(20, distance));
+        this._skillShakeDuration = Math.max(0.01, Math.min(0.5, duration));
+        this._skillShakeRemaining = this._skillShakeDuration;
     }
 
     private onDamaged (appliedDamage: number, hit?: PlayerHitContext): void {
@@ -230,7 +243,8 @@ export class TargetMover extends Component {
         }
 
         this._shakeRemaining = Math.max(0, this._shakeRemaining - dt);
-        if (this._shakeRemaining <= 0) {
+        this._skillShakeRemaining = Math.max(0, this._skillShakeRemaining - dt);
+        if (this._shakeRemaining <= 0 && this._skillShakeRemaining <= 0) {
             this._shakeOffset.set(0, 0);
             return;
         }
@@ -238,9 +252,14 @@ export class TargetMover extends Component {
         const progress = 1 - this._shakeRemaining / duration;
         const amplitude = Math.max(0, this.heavyHitShakeDistance)
             * this._shakeRemaining / duration;
+        const skillProgress = 1 - this._skillShakeRemaining / this._skillShakeDuration;
+        const skillAmplitude = this._skillShakeDistance
+            * (this._skillShakeRemaining / this._skillShakeDuration) ** 2;
         this._shakeOffset.set(
-            Math.sin(progress * Math.PI * 8) * amplitude,
-            Math.sin(progress * Math.PI * 6 + Math.PI * 0.5) * amplitude * 0.6,
+            Math.sin(progress * Math.PI * 8) * amplitude
+                + Math.sin(skillProgress * Math.PI * 12) * skillAmplitude,
+            Math.sin(progress * Math.PI * 6 + Math.PI * 0.5) * amplitude * 0.6
+                + Math.cos(skillProgress * Math.PI * 16) * skillAmplitude * 0.65,
         );
     }
 

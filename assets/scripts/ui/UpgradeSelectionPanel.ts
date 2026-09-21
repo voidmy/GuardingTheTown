@@ -8,7 +8,7 @@ export interface UpgradePanelConfig {
     refreshesRemaining?: number; canRefresh?: boolean;
     onRefresh?: () => void; onDefer?: () => void; onContinue?: () => void;
 }
-const CARD_NAMES = ['CommonCard', 'RareCard', 'LegendaryCard', 'ExtraCard'];
+const CARD_NAMES = ['CommonCard', 'RareCard', 'LegendaryCard', 'ExtraCard', 'FifthCard', 'SixthCard', 'SeventhCard', 'EighthCard'];
 interface CardBinding { node: Node; name: Label; description: Label; type: Label; button: Button; }
 
 @ccclass('UpgradeSelectionPanel')
@@ -32,7 +32,7 @@ export class UpgradeSelectionPanel extends Component {
 
     public show (level: number, options: readonly UpgradeOption[], selected: UpgradeSelectedCallback,
         config: UpgradePanelConfig = {}): boolean {
-        if (options.length > (config.kind === 'evolution' ? 4 : 3)
+        if (options.length > (config.kind === 'evolution' ? CARD_NAMES.length : 3)
             || new Set(options.map((option) => option.id)).size !== options.length) {
             console.error('[UpgradeSelectionPanel] 候选数量超限或存在重复项。');
             return false;
@@ -54,7 +54,11 @@ export class UpgradeSelectionPanel extends Component {
             card.name.string = option.name; card.description.string = option.description;
             card.type.string = kind === 'core' ? '流派核心' : kind === 'evolution' ? '技能进化' : '普通升级';
             const p = card.node.position;
-            card.node.setPosition((index - (options.length - 1) / 2) * 560,p.y,p.z);
+            const multipleRows = options.length > 4;
+            const rowCount = multipleRows ? Math.min(4, options.length - Math.floor(index / 4) * 4) : options.length;
+            card.node.setScale(multipleRows ? 0.6 : 1, multipleRows ? 0.6 : 1, 1);
+            card.node.setPosition(((index % 4) - (rowCount - 1) / 2) * (multipleRows ? 350 : 560),
+                multipleRows ? 170 - Math.floor(index / 4) * 380 : -30, p.z);
         });
         const remaining = Math.max(0,config.refreshesRemaining ?? 0);
         this._refresh.node.active = kind !== 'evolution' && options.length > 0;

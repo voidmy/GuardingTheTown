@@ -1,4 +1,4 @@
-import { _decorator, Button, Component, Game, game, Label, Node, Sprite } from 'cc';
+import { _decorator, Button, Color, Component, Game, game, Label, Node, Sprite, SpriteFrame } from 'cc';
 import { ProgressionUIController } from './ProgressionUI';
 import {
     CharacterHealthSnapshot,
@@ -6,6 +6,9 @@ import {
 } from '../player/CharacterStats';
 
 const { ccclass, menu, property } = _decorator;
+interface HudSkillSlot { icon: Sprite; name: Label; level: Label; badge: Label; empty: Node; key: string; }
+const NORMAL_TEXT = new Color(255, 225, 143, 255);
+const GOLD_TEXT = new Color(255, 190, 64, 255);
 
 @ccclass('PlayerHud')
 @menu('Gameplay/Player HUD')
@@ -18,6 +21,26 @@ export class PlayerHud extends Component {
 
     @property(Label)
     public healthLabel: Label | null = null;
+
+    @property(SpriteFrame) public shootingIcon: SpriteFrame | null = null;
+    @property(SpriteFrame) public arrowIcon: SpriteFrame | null = null;
+    @property(SpriteFrame) public bladeIcon: SpriteFrame | null = null;
+    @property(SpriteFrame) public windIcon: SpriteFrame | null = null;
+    @property(SpriteFrame) public thunderIcon: SpriteFrame | null = null;
+    @property(SpriteFrame) public chainIcon: SpriteFrame | null = null;
+    @property(SpriteFrame) public frostIcon: SpriteFrame | null = null;
+    @property(SpriteFrame) public swordQiIcon: SpriteFrame | null = null;
+
+    private readonly _slots: HudSkillSlot[] = [];
+    private _icons: Array<SpriteFrame | null> = [];
+    private _experienceFill: Sprite | null = null;
+    private _levelLabel: Label | null = null;
+    private _experienceLabel: Label | null = null;
+    private _clockLabel: Label | null = null;
+    private _killLabel: Label | null = null;
+    private _slotCountLabel: Label | null = null;
+    private _combatLabel: Label | null = null;
+    private _shieldLabel: Label | null = null;
 
     private _characterStats: CharacterStats | null = null;
     private _controller: ProgressionUIController | null = null;
@@ -84,6 +107,32 @@ export class PlayerHud extends Component {
         this._evolutionButton = this.node.getChildByName('EvolutionButton')?.getComponent(Button) ?? null;
         const cheats = this.node.getChildByName('CheatButton')?.getComponent(Button);
         if (!this._progressionLabel || !this._evolutionButton || !cheats) return;
+        const vitals = this.node.getChildByName('Vitals');
+        const clock = this.node.getChildByName('BattleClock');
+        const dock = this.node.getChildByName('SkillDock');
+        this._levelLabel = vitals?.getChildByName('Level')?.getComponent(Label) ?? null;
+        this._experienceLabel = vitals?.getChildByName('Experience')?.getComponent(Label) ?? null;
+        this._shieldLabel = vitals?.getChildByName('Shield')?.getComponent(Label) ?? null;
+        this._experienceFill = vitals?.getChildByName('ExperienceTrack')?.getChildByName('Fill')?.getComponent(Sprite) ?? null;
+        this._clockLabel = clock?.getChildByName('Time')?.getComponent(Label) ?? null;
+        this._killLabel = clock?.getChildByName('Kills')?.getComponent(Label) ?? null;
+        this._slotCountLabel = dock?.getChildByName('SlotCount')?.getComponent(Label) ?? null;
+        this._combatLabel = this.node.getChildByName('CombatNotice')?.getComponent(Label) ?? null;
+        this._icons = [this.shootingIcon, this.arrowIcon, this.bladeIcon, this.windIcon,
+            this.thunderIcon, this.chainIcon, this.frostIcon, this.swordQiIcon];
+        for (let index = 1; index <= 3; index++) {
+            const node = dock?.getChildByName(`Slot${index}`);
+            const icon = node?.getChildByName('Icon')?.getComponent(Sprite);
+            const name = node?.getChildByName('Name')?.getComponent(Label);
+            const level = node?.getChildByName('Level')?.getComponent(Label);
+            const badge = node?.getChildByName('Badge')?.getComponent(Label);
+            const empty = node?.getChildByName('Empty');
+            if (icon && name && level && badge && empty) this._slots.push({ icon, name, level, badge, empty, key: '' });
+        }
+        const details = this.node.getChildByName('DetailsButton')?.getComponent(Button);
+        details?.node.on(Button.EventType.CLICK, () => {
+            if (this._progressionLabel) this._progressionLabel.node.active = !this._progressionLabel.node.active;
+        }, this);
         cheats.node.on(Button.EventType.CLICK,() => this._controller?.openCheats(),this);
         this._evolutionButton.node.on(Button.EventType.CLICK,() => this._controller?.openEvolution(),this);
         this._progressionBound = true;
@@ -93,6 +142,36 @@ export class PlayerHud extends Component {
         this.bindProgression();
         if (!this._controller || !this._progressionBound) return;
         const state = this._controller.getProgressionSnapshot();
+        if (this._levelLabel) this._levelLabel.string = `Lv.${state.playerLevel}`;
+        if (this._experienceLabel) this._experienceLabel.string = state.experienceToNext > 0
+            ? `经验 ${state.experience} / ${state.experienceToNext}` : '本局等级已满';
+        if (this._experienceFill) this._experienceFill.fillRange = state.experienceToNext > 0
+            ? Math.max(0, Math.min(1, state.experience / state.experienceToNext)) : 1;
+        const seconds = Math.max(0, Math.floor(state.elapsedSeconds));
+        if (this._clockLabel) this._clockLabel.string = `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+        if (this._killLabel) this._killLabel.string = `击败 ${state.kills}`;
+        if (this._slotCountLabel) this._slotCountLabel.string = state.skills.length > state.skillLimit
+            ? `调试超额 · ${state.skills.length} 个技能` : `本局技能  ${state.skills.length} / ${state.skillLimit}`;
+        if (this._combatLabel) this._combatLabel.string = state.combatStatus ?? '';
+        // Keep the innate skill first, even after debug removals and re-acquisition.
+        const ordered = state.skills.slice().sort((a, b) => Number(b.innate) - Number(a.innate));
+        this._slots.forEach((slot, index) => {
+            const skill = ordered[index];
+            const key = skill ? `${skill.skill}:${skill.level}:${skill.evolved}:${skill.innate}` : 'empty';
+            if (key === slot.key) return;
+            slot.key = key;
+            slot.empty.active = !skill;
+            slot.icon.node.active = Boolean(skill);
+            slot.badge.string = skill?.innate ? '本命' : `副技能 ${index}`;
+            slot.name.string = skill?.name ?? '空技能槽';
+            slot.level.string = skill ? `${skill.evolved ? '已进化 · ' : ''}Lv.${skill.level} / 5` : '升级时学习';
+            slot.name.color = skill?.evolved ? GOLD_TEXT : NORMAL_TEXT;
+            if (skill) {
+                slot.icon.spriteFrame = this._icons[skill.skill] ?? null;
+                slot.icon.node.setRotationFromEuler(0, 0, skill.skill === 4 ? 90 : 0);
+                slot.icon.color = skill.skill === 4 ? new Color(255, 234, 160) : Color.WHITE;
+            }
+        });
         const skills = state.skills.map((skill) => `${skill.name} Lv.${skill.level}${skill.evolved ? '·进化' : ''}`).join('  ');
         const experience = state.experienceToNext > 0 ? `${state.experience}/${state.experienceToNext}` : '已满级';
         this._progressionLabel.string = `Lv.${state.playerLevel}  经验 ${experience}  刷新 ${state.refreshesRemaining}/3\n`
@@ -133,5 +212,6 @@ export class PlayerHud extends Component {
         if (this.healthLabel) {
             this.healthLabel.string = `${Math.ceil(health.current)} / ${Math.ceil(health.maximum)}`;
         }
+        if (this._shieldLabel) this._shieldLabel.string = health.shield > 0 ? `护盾 +${Math.ceil(health.shield)}` : '守镇者';
     }
 }

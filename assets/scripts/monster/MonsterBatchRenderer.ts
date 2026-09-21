@@ -45,6 +45,7 @@ export class MonsterBatchRenderer extends UIRenderer {
         phase = 0,
         flipX = false,
         hitFlash = 0,
+        frostState = 0,
     ): void {
         if (index < 0 || index >= MONSTERS_PER_RENDERER) return;
 
@@ -57,7 +58,8 @@ export class MonsterBatchRenderer extends UIRenderer {
         data[offset + 1] = y;
         data[offset + 2] = width;
         data[offset + 3] = height;
-        data[offset + 4] = Math.max(0, phase | 0);
+        // Reuse unused high bits of the existing phase byte; no extra vertices or materials.
+        data[offset + 4] = (Math.max(0, phase | 0) % 64) + Math.min(2, Math.max(0, frostState | 0)) * 64;
         data[offset + 5] = flipX ? 1 : 0;
         data[offset + 6] = Math.min(1, Math.max(0, hitFlash));
     }

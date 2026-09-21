@@ -115,7 +115,7 @@
             "_value": false
           },
           "particle-2d": {
-            "_value": false
+            "_value": true
           },
           "audio": {
             "_value": true
@@ -197,6 +197,7 @@
           "custom-pipeline",
           "dragon-bones",
           "gfx-webgl",
+          "particle-2d",
           "ui"
         ],
         "flags": {}

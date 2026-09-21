@@ -32,6 +32,10 @@ export enum GameSkill {
     PiercingArrow = 1,
     QiBlade = 2,
     Tornado = 3,
+    Thunder = 4,
+    ChainLightning = 5,
+    FrostPulse = 6,
+    SwordQi = 7,
 }
 
 Enum(GameSkill);

@@ -1,0 +1,134 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "cedf4d10-d32e-48b1-8c48-1a3e56f1dd70",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "cedf4d10-d32e-48b1-8c48-1a3e56f1dd70@6c48a",
+      "displayName": "frost_ring",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "cedf4d10-d32e-48b1-8c48-1a3e56f1dd70",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9941": {
+      "importer": "sprite-frame",
+      "uuid": "cedf4d10-d32e-48b1-8c48-1a3e56f1dd70@f9941",
+      "displayName": "frost_ring",
+      "id": "f9941",
+      "name": "spriteFrame",
+      "userData": {
+        "trimThreshold": 1,
+        "rotated": false,
+        "offsetX": -0.5,
+        "offsetY": 0,
+        "trimX": 0,
+        "trimY": 0,
+        "width": 1253,
+        "height": 1254,
+        "rawWidth": 1254,
+        "rawHeight": 1254,
+        "borderTop": 0,
+        "borderBottom": 0,
+        "borderLeft": 0,
+        "borderRight": 0,
+        "packable": true,
+        "pixelsToUnit": 100,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "meshType": 0,
+        "vertices": {
+          "rawPosition": [
+            -626.5,
+            -627,
+            0,
+            626.5,
+            -627,
+            0,
+            -626.5,
+            627,
+            0,
+            626.5,
+            627,
+            0
+          ],
+          "indexes": [
+            0,
+            1,
+            2,
+            2,
+            1,
+            3
+          ],
+          "uv": [
+            0,
+            1254,
+            1253,
+            1254,
+            0,
+            0,
+            1253,
+            0
+          ],
+          "nuv": [
+            0,
+            0,
+            0.9992025518341308,
+            0,
+            0,
+            1,
+            0.9992025518341308,
+            1
+          ],
+          "minPos": [
+            -626.5,
+            -627,
+            0
+          ],
+          "maxPos": [
+            626.5,
+            627,
+            0
+          ]
+        },
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "cedf4d10-d32e-48b1-8c48-1a3e56f1dd70@6c48a",
+        "atlasUuid": "",
+        "trimType": "auto"
+      },
+      "ver": "1.0.12",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "sprite-frame",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "cedf4d10-d32e-48b1-8c48-1a3e56f1dd70@6c48a"
+  }
+}

@@ -1,0 +1,13 @@
+Asset: AMB Rain Loop 2
+Author: Kresiek The Furry
+Source page: https://opengameart.org/content/amb-rain-loop-2
+Source file: https://opengameart.org/sites/default/files/amb_rain2.ogg
+License declared by source page: CC0
+License: https://creativecommons.org/publicdomain/zero/1.0/
+Retrieved: 2026-09-21
+Source describes a GoPro Hero 12 Black field recording using raw audio settings.
+
+Project derivative: assets/audio/skills/rain-loop.wav
+Extracted source seconds 10-15, mixed to mono, resampled to 22050 Hz,
+crossfaded 0.25 seconds at the loop boundary, normalized to peak 0.75,
+saved as approximately 4.75 seconds of PCM 16-bit WAV.

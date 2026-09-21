@@ -35,8 +35,8 @@
     },
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -1258,
-      "y": 573.5,
+      "x": 1026,
+      "y": -526.5,
       "z": 0
     },
     "_lrot": {
@@ -81,8 +81,8 @@
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
-      "x": 0,
-      "y": 1
+      "x": 0.5,
+      "y": 0.5
     },
     "_id": ""
   },
@@ -108,18 +108,18 @@
     "_color": {
       "__type__": "cc.Color",
       "r": 255,
-      "g": 209,
-      "b": 102,
+      "g": 225,
+      "b": 143,
       "a": 255
     },
-    "_string": "当前怪物：0 / 2000\n击杀：0　下次升级：10",
-    "_horizontalAlign": 0,
+    "_string": "怪物 0",
+    "_horizontalAlign": 2,
     "_verticalAlign": 1,
-    "_actualFontSize": 24,
-    "_fontSize": 24,
+    "_actualFontSize": 20,
+    "_fontSize": 20,
     "_fontFamily": "Arial",
-    "_lineHeight": 34,
-    "_overflow": 1,
+    "_lineHeight": 26,
+    "_overflow": 2,
     "_enableWrapText": true,
     "_font": null,
     "_isSystemFontUsed": true,
@@ -128,13 +128,13 @@
     "_isBold": true,
     "_isUnderline": false,
     "_underlineHeight": 2,
-    "_cacheMode": 0,
+    "_cacheMode": 2,
     "_enableOutline": true,
     "_outlineColor": {
       "__type__": "cc.Color",
-      "r": 43,
-      "g": 32,
-      "b": 20,
+      "r": 8,
+      "g": 15,
+      "b": 23,
       "a": 255
     },
     "_outlineWidth": 2,
@@ -170,12 +170,12 @@
     "__prefab": {
       "__id__": 7
     },
-    "_alignFlags": 9,
+    "_alignFlags": 36,
     "_target": null,
     "_left": 20,
-    "_right": 0,
+    "_right": 32,
     "_top": 16,
-    "_bottom": 0,
+    "_bottom": 24,
     "_horizontalCenter": 0,
     "_verticalCenter": 0,
     "_isAbsLeft": true,

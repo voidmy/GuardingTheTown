@@ -5,6 +5,7 @@ export type CoreId = 'formation' | 'focus' | 'blade_guard' | 'wind_eye'
 
 export const ALL_SKILLS: readonly GameSkill[] = [
     GameSkill.BasicAttack, GameSkill.PiercingArrow, GameSkill.QiBlade, GameSkill.Tornado,
+    GameSkill.Thunder, GameSkill.ChainLightning, GameSkill.FrostPulse, GameSkill.SwordQi,
 ];
 
 export const SKILL_NAMES: Record<GameSkill, string> = {
@@ -12,6 +13,10 @@ export const SKILL_NAMES: Record<GameSkill, string> = {
     [GameSkill.PiercingArrow]: '穿透箭',
     [GameSkill.QiBlade]: '气刃环',
     [GameSkill.Tornado]: '小旋风',
+    [GameSkill.Thunder]: '自动落雷',
+    [GameSkill.ChainLightning]: '连锁闪电',
+    [GameSkill.FrostPulse]: '寒霜脉冲',
+    [GameSkill.SwordQi]: '刀气起',
 };
 
 export const SKILL_TAGS: Record<GameSkill, readonly string[]> = {
@@ -19,9 +24,36 @@ export const SKILL_TAGS: Record<GameSkill, readonly string[]> = {
     [GameSkill.PiercingArrow]: ['projectile', 'area'],
     [GameSkill.QiBlade]: ['melee', 'survival', 'area'],
     [GameSkill.Tornado]: ['control', 'synergy', 'area'],
+    [GameSkill.Thunder]: ['single', 'burst', 'area'],
+    [GameSkill.ChainLightning]: ['area', 'burst'],
+    [GameSkill.FrostPulse]: ['control', 'survival', 'area'],
+    [GameSkill.SwordQi]: ['projectile', 'area', 'burst'],
 };
 
 export const SKILL_LEVEL_DESCRIPTIONS: Record<GameSkill, readonly string[]> = {
+    [GameSkill.SwordQi]: [
+        '', '每3秒挥出两道相反刀气，间隔0.22秒、向前飞行360，沿途群伤且每刀对同一敌人命中一次。首刀伤害2；回斩伤害+35%、范围+20%。',
+        '释放间隔：3秒 → 2.6秒；首刀基础伤害：2 → 2.6。',
+        '获得20%概率双重打击：本轮第二刀之后立即追加一轮双斩，不等待冷却；追加不会再次触发。首刀半径：170 → 205。',
+        '释放间隔：2.6秒 → 2.2秒；双重打击概率：20% → 30%；首刀基础伤害：2.6 → 3.4。',
+        '释放间隔：2.2秒 → 1.8秒；双重打击概率：30% → 40%；首刀基础伤害：3.4 → 4.2。',
+    ],
+    [GameSkill.Thunder]: [
+        '', '每4秒自动落雷，优先精英与Boss；预警0.3秒后对小范围造成6点基础伤害。',
+        '落雷基础伤害：6 → 7.5。', '落雷半径：90 → 115。',
+        '落雷基础伤害：7.5 → 10。', '落雷基础伤害：10 → 12；间隔：4秒 → 3.2秒。',
+    ],
+    [GameSkill.ChainLightning]: [
+        '', '每2.5秒自动释放闪电，最多连接3个不同敌人，每个目标受到2点基础伤害。',
+        '每个目标的基础伤害：2 → 2.5。', '最多连接目标：3 → 4。',
+        '每个目标的基础伤害：2.5 → 3.2。', '基础伤害：3.2 → 3.8；间隔：2.5秒 → 2秒。',
+    ],
+    [GameSkill.FrostPulse]: [
+        '', '有怪靠近时自动释放，冷却6秒。造成1点基础伤害，普通怪冻结0.65秒后减速45%持续1.5秒；精英减速减半，Boss免控。',
+        '脉冲基础伤害：1 → 1.4。', '作用半径：240 → 280。',
+        '基础伤害：1.4 → 1.8；减速持续：1.5秒 → 2秒。',
+        '基础伤害：1.8 → 2.2；冷却：6秒 → 5秒。',
+    ],
     [GameSkill.BasicAttack]: [
         '', '自动瞄准射程内目标，每轮发射 1 弹。',
         '单弹伤害：基础伤害的 100% → 120%。',
@@ -38,10 +70,10 @@ export const SKILL_LEVEL_DESCRIPTIONS: Record<GameSkill, readonly string[]> = {
     ],
     [GameSkill.QiBlade]: [
         '', '召唤 1 把环绕气刃；同一伤害周期对同一敌人只结算一次。',
-        '气刃数量：1 → 2，扩大近身覆盖；单目标每周期伤害保持不变。',
-        '气刃数量：2 → 3；单次伤害提高至基础伤害的 115%。',
-        '单次伤害：基础伤害的 115% → 140%。',
-        '单次伤害提高至基础伤害的 160%；伤害周期间隔降至基础的 90%。',
+        '气刃数量：1 → 2；环绕距离增加；单目标每周期伤害保持不变。',
+        '气刃数量：2 → 3；环绕距离增加；单次伤害提高至基础伤害的 115%。',
+        '环绕距离增加；单次伤害：基础伤害的 115% → 140%。',
+        '环绕距离增加；单次伤害提高至基础伤害的 160%；伤害周期间隔降至基础的 90%。',
     ],
     [GameSkill.Tornado]: [
         '', '5 秒后召唤小旋风，持续 3 秒，结束后冷却 5 秒；中心区域造成伤害。',
@@ -53,6 +85,10 @@ export const SKILL_LEVEL_DESCRIPTIONS: Record<GameSkill, readonly string[]> = {
 };
 
 export const EVOLUTIONS: Record<GameSkill, { name: string; description: string }> = {
+    [GameSkill.SwordQi]: { name: '惊鸿双斩', description: '双重打击概率40% → 60%；刀气飞行360 → 440，首刀半径205 → 235，伤害再提高35%。追加双斩不连锁，消耗本局唯一进化资格。' },
+    [GameSkill.Thunder]: { name: '双重天雷', description: '保留满级落雷，在首次命中0.3秒后原地追加60%伤害的余雷。替换原槽，消耗本局唯一进化资格。' },
+    [GameSkill.ChainLightning]: { name: '雷霆连锁', description: '最多连接5个不同敌人，跳跃距离200 → 250；每个目标基础伤害3.8。替换原槽，消耗本局唯一进化资格。' },
+    [GameSkill.FrostPulse]: { name: '极寒领域', description: '半径280 → 320，普通怪冻结0.65秒 → 1秒；保留2秒减速与5秒冷却。替换原槽，消耗本局唯一进化资格。' },
     [GameSkill.BasicAttack]: {
         name: '疾风连射',
         description: '每轮连续 3 弹，每弹为基础伤害的 85%，轮次间隔为基础的 90%。消耗本局唯一进化资格。',

@@ -30,6 +30,7 @@ CCProgram monster-batch-vs %{
   out vec2 uv0;
   out float opacity;
   out float hitFlash;
+  out float frost;
 
   uniform MonsterAnimation {
     vec4 animParams;
@@ -38,8 +39,12 @@ CCProgram monster-batch-vs %{
   vec4 vert () {
     float frameCount = max(1.0, floor(animParams.x + 0.5));
     float fps = max(0.001, animParams.y);
-    float phase = floor(a_color.r * 255.0 + 0.5);
+    float encodedPhase = floor(a_color.r * 255.0 + 0.5);
+    float phase = mod(encodedPhase, 64.0);
+    float frostState = floor(encodedPhase / 64.0);
+    frost = frostState * 0.32;
     float current = mod(cc_time.x, frameCount / fps) * fps;
+    if (frostState > 1.5) current = 0.0;
     float frame = mod(floor(current) + phase, frameCount);
 
     vec2 localUV = a_texCoord;
@@ -61,12 +66,14 @@ CCProgram monster-batch-fs %{
   in vec2 uv0;
   in float opacity;
   in float hitFlash;
+  in float frost;
 
   #pragma builtin(local)
   layout(set = 2, binding = 12) uniform sampler2D cc_spriteTexture;
 
   vec4 frag () {
     vec4 color = texture(cc_spriteTexture, uv0);
+    color.rgb = mix(color.rgb, vec3(0.48, 0.85, 1.0), frost);
     color.rgb = mix(color.rgb, vec3(1.0, 0.08, 0.08), hitFlash * 0.75);
     color.a *= opacity;
     return color;

@@ -79,7 +79,7 @@ interface ActiveOffer {
 }
 
 const MAX_ORDINARY_REWARDS = 13;
-const MAX_SKILL_SLOTS = 3;
+export const MAX_SKILL_SLOTS = 3;
 const MAX_SKILL_LEVEL = 5;
 const MAX_CORE_SLOTS = 2;
 
@@ -144,6 +144,8 @@ export class RunProgression {
 
     public get corePending (): number { return this._corePending; }
 
+    public get canEarnExperience (): boolean { return this._ordinaryEarned < MAX_ORDINARY_REWARDS; }
+
     public get damageBonus (): number { return this._damageRanks * 0.08; }
 
     public get evolutionAvailable (): boolean {
@@ -194,6 +196,28 @@ export class RunProgression {
         }
         if (this._ordinaryEarned === MAX_ORDINARY_REWARDS) this._experience = 0;
         return this._ordinaryEarned - before;
+    }
+
+    /** Rare equipment immediately strengthens an owned skill or a capped base stat. */
+    public grantEquipmentReward (
+        health: UpgradeHealthInfo, applyEffect: (effect: UpgradeEffect) => boolean,
+    ): UpgradeEffect | null {
+        if (this._committing || this._offer) return null;
+        const candidates = this.buildCandidates('ordinary', health).filter(candidate =>
+            candidate.effect.type === 'damage' || candidate.effect.type === 'maximum-health'
+            || candidate.effect.type === 'skill-level');
+        if (candidates.length === 0) return null;
+        const candidate = candidates[Math.min(candidates.length - 1,
+            Math.max(0, Math.floor(this._random() * candidates.length)))];
+        const effect = { ...candidate.effect };
+        this._committing = true;
+        try {
+            if (!applyEffect(effect)) return null;
+            this.applyState(effect);
+            return effect;
+        } finally {
+            this._committing = false;
+        }
     }
 
     public grantCoreReward (): boolean {
@@ -290,7 +314,8 @@ export class RunProgression {
     }
 
     public debugSetSkillLevel (skill: GameSkill, level: number, ignoreSlotLimit = true): boolean {
-        if (!this._availableSkills.includes(skill) || !Number.isInteger(level)
+        // Debug may compare potion-era wind/frost with the former automatic skills.
+        if (!ALL_SKILLS.includes(skill) || !Number.isInteger(level)
             || level < 0 || level > MAX_SKILL_LEVEL) return false;
         if (level === 0) {
             if (skill === this._initialSkill) return false;

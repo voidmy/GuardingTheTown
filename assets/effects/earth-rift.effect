@@ -1,0 +1,81 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: earth-rift-vs:vert
+      frag: earth-rift-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        riftState: { value: [0.7, 2.8, 0.48, 0] }
+        riftSize: { value: [2000, 480, 2200, 760] }
+}%
+
+CCProgram earth-rift-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #if USE_LOCAL
+    #include <builtin/uniforms/cc-local>
+  #endif
+  in vec3 a_position;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+  out vec2 uv0;
+  out vec4 color;
+  vec4 vert () {
+    vec4 position = vec4(a_position, 1.0);
+    #if USE_LOCAL
+      position = cc_matWorld * position;
+    #endif
+    uv0 = a_texCoord;
+    color = a_color;
+    return cc_matViewProj * position;
+  }
+}%
+
+CCProgram earth-rift-fs %{
+  precision highp float;
+  #include <builtin/internal/embedded-alpha>
+  in vec2 uv0;
+  in vec4 color;
+  uniform RiftParams {
+    vec4 riftState;
+    vec4 riftSize;
+  };
+
+  #pragma builtin(local)
+  layout(set = 2, binding = 11) uniform sampler2D cc_spriteTexture;
+
+  vec4 frag () {
+    float age = riftState.x;
+    float lifetime = riftState.y;
+    float openingTime = riftState.z;
+    // The authored unatlased PNG supplies sharp faults, branching banks and deep rock walls.
+    // Each column tears open after the advancing rupture reaches it; one texture sample only.
+    float columnAge = age - uv0.x * openingTime * 0.55;
+    float aperture = mix(0.025, 1.0, smoothstep(0.0, openingTime * 0.45, columnAge));
+    float reveal = smoothstep(0.0, 0.025, columnAge);
+    float fade = 1.0 - smoothstep(lifetime - 0.85, lifetime, age);
+    vec2 sampleUV = vec2(uv0.x, 0.5 + (uv0.y - 0.5) / aperture);
+    float shear = (1.0 - aperture) * 12.0 / riftSize.z;
+    sampleUV.x += sign(uv0.y - 0.5) * shear * sin(uv0.x * 19.0 + riftState.w);
+    if (sampleUV.y < 0.0 || sampleUV.y > 1.0 || sampleUV.x < 0.0 || sampleUV.x > 1.0 || reveal <= 0.0) {
+      return vec4(0.0);
+    }
+    vec4 fissure = CCSampleWithAlphaSeparated(cc_spriteTexture, sampleUV);
+    float impact = 1.0 - smoothstep(0.0, 0.25, abs(age - openingTime));
+    float wallLight = smoothstep(0.06, 0.42, dot(fissure.rgb, vec3(0.299, 0.587, 0.114)));
+    fissure.rgb += vec3(0.36, 0.20, 0.055) * wallLight * impact;
+    fissure.rgb *= color.rgb;
+    fissure.a *= reveal * fade * color.a;
+    return fissure;
+  }
+}%
