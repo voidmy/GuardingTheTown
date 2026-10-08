@@ -1,16 +1,19 @@
 import { GameSkill } from '../GameSettings';
+import { ATTACK_BONUS_PER_RANK, formatCombatNumber, getSkillIntrinsicDamage, MAX_SKILL_DAMAGE_RANK } from '../combat/CombatNumbers';
 import {
     ALL_SKILLS, CORE_DEFINITIONS, CORE_IDS, EVOLUTIONS,
-    SKILL_LEVEL_DESCRIPTIONS, SKILL_NAMES, SKILL_TAGS,
+    SKILL_LEVEL_DESCRIPTIONS, SKILL_NAMES, SKILL_TAGS, SKILL_DAMAGE_PROFILES,
 } from './UpgradeDefinitions';
 import type { CoreId } from './UpgradeDefinitions';
+import { describeUpgrade } from './UpgradePresentation';
+import type { UpgradePresentation } from './UpgradePresentation';
 
 export type { CoreId } from './UpgradeDefinitions';
 export { CORE_DEFINITIONS, CORE_IDS, EVOLUTIONS, SKILL_NAMES } from './UpgradeDefinitions';
 
 export type UpgradeOfferKind = 'ordinary' | 'core' | 'evolution';
 
-export interface UpgradeOption {
+export interface UpgradeOption extends UpgradePresentation {
     id: string;
     name: string;
     description: string;
@@ -30,10 +33,11 @@ export interface UpgradeOffer {
 }
 
 export interface UpgradeEffect {
-    type: 'learn' | 'skill-level' | 'damage' | 'maximum-health' | 'heal'
+    type: 'learn' | 'skill-level' | 'skill-damage' | 'damage' | 'maximum-health' | 'heal'
         | 'core' | 'evolution' | 'empty';
     skill?: GameSkill;
     level?: number;
+    damageRank?: number;
     coreId?: CoreId;
     amount?: number;
 }
@@ -41,6 +45,7 @@ export interface UpgradeEffect {
 export interface RunSkillSnapshot {
     skill: GameSkill;
     level: number;
+    damageRank: number;
     evolved: boolean;
 }
 
@@ -58,6 +63,7 @@ export interface RunProgressionSnapshot {
     evolutionUsed: boolean;
     initialSkill: GameSkill;
     damageBonus: number;
+    moveSpeedBonus: number;
     healthRanks: number;
 }
 
@@ -78,17 +84,23 @@ interface ActiveOffer {
     shownNew: boolean;
 }
 
-const MAX_ORDINARY_REWARDS = 13;
+/** Early choices establish the build; later thresholds follow chapter experience budgets. */
+export const RUN_EXPERIENCE_THRESHOLDS: readonly number[] = [6, 10, 16, 24, 34, 46, 58, 70, 82, 94, 106, 118, 130];
+const MAX_ORDINARY_REWARDS = RUN_EXPERIENCE_THRESHOLDS.length;
 export const MAX_SKILL_SLOTS = 3;
 const MAX_SKILL_LEVEL = 5;
 const MAX_CORE_SLOTS = 2;
+const MOVE_SPEED_BONUS_PER_LEVEL = 0.01;
+const MAX_MOVE_SPEED_BONUS = 0.15;
 
 /** Run-only progression. The caller applies combat effects before a reward is consumed. */
 export class RunProgression {
     private _initialSkill = GameSkill.QiBlade;
     private readonly _skills = new Map<GameSkill, number>();
+    private readonly _skillDamageRanks = new Map<GameSkill, number>();
     private readonly _cores = new Set<CoreId>();
     private _availableSkills: GameSkill[] = [];
+    private readonly _masteredSkills = new Set<GameSkill>();
     private _availableCoreIds = new Set<CoreId>(CORE_IDS);
     private _experience = 0;
     private _ordinaryEarned = 0;
@@ -110,11 +122,13 @@ export class RunProgression {
 
     constructor (private readonly _random: () => number = Math.random) {}
 
-    public reset (initialSkill: GameSkill, availableSkills: readonly GameSkill[]): void {
+    public reset (initialSkill: GameSkill, availableSkills: readonly GameSkill[], masteredSkills = availableSkills): void {
         this._availableSkills = ALL_SKILLS.filter((skill) => availableSkills.includes(skill));
+        this.setMasteredSkills(masteredSkills);
         this._initialSkill = this._availableSkills.includes(initialSkill)
             ? initialSkill : this._availableSkills[0] ?? initialSkill;
         this._skills.clear();
+        this._skillDamageRanks.clear();
         if (this._availableSkills.includes(this._initialSkill)) {
             this._skills.set(this._initialSkill, 1);
         }
@@ -146,7 +160,12 @@ export class RunProgression {
 
     public get canEarnExperience (): boolean { return this._ordinaryEarned < MAX_ORDINARY_REWARDS; }
 
-    public get damageBonus (): number { return this._damageRanks * 0.08; }
+    public get damageBonus (): number { return this._damageRanks * ATTACK_BONUS_PER_RANK; }
+
+    /** Flat bonus per completed player level; pending rewards and skill levels do not count. */
+    public get moveSpeedBonus (): number {
+        return Math.min(MAX_MOVE_SPEED_BONUS, this._ordinaryClaimed * MOVE_SPEED_BONUS_PER_LEVEL);
+    }
 
     public get evolutionAvailable (): boolean {
         return this._evolutionGranted && !this._evolutionUsed
@@ -159,18 +178,38 @@ export class RunProgression {
 
     public getSkillLevel (skill: GameSkill): number { return this._skills.get(skill) ?? 0; }
 
+    public getSkillDamageRank (skill: GameSkill): number { return this._skillDamageRanks.get(skill) ?? 0; }
+
+    public setMasteredSkills (skills: readonly GameSkill[]): void {
+        this._masteredSkills.clear();
+        for (const skill of skills) if (this._availableSkills.includes(skill)) this._masteredSkills.add(skill);
+    }
+
+    public canLearnTrial (skill: GameSkill): boolean {
+        return !this._offer && !this._committing && this._availableSkills.includes(skill)
+            && this.getSkillLevel(skill) === 0 && this._skills.size < MAX_SKILL_SLOTS;
+    }
+
+    /** An authored manual encounter grants Lv.1; subsequent levels still use ordinary choices. */
+    public learnTrial (skill: GameSkill): boolean {
+        if (!this.canLearnTrial(skill)) return false;
+        this._skills.set(skill, 1);
+        this.updateMajorSkill();
+        return true;
+    }
+
     public getCoreIds (): CoreId[] { return Array.from(this._cores); }
 
     public getSnapshot (): RunProgressionSnapshot {
         return {
             skills: Array.from(this._skills).map(([skill, level]) => ({
-                skill, level, evolved: skill === this._evolvedSkill,
+                skill, level, damageRank: this.getSkillDamageRank(skill), evolved: skill === this._evolvedSkill,
             })),
             coreIds: this.getCoreIds(),
             playerLevel: this._ordinaryClaimed + 1,
             experience: this._experience,
             nextLevelExperience: this._ordinaryEarned < MAX_ORDINARY_REWARDS
-                ? 20 + this._ordinaryEarned * 5 : 0,
+                ? RUN_EXPERIENCE_THRESHOLDS[this._ordinaryEarned] : 0,
             ordinaryPending: this.ordinaryPending,
             corePending: this._corePending,
             refreshesRemaining: this._refreshesRemaining,
@@ -179,6 +218,7 @@ export class RunProgression {
             evolutionUsed: this._evolutionUsed,
             initialSkill: this._initialSkill,
             damageBonus: this.damageBonus,
+            moveSpeedBonus: this.moveSpeedBonus,
             healthRanks: this._healthRanks,
         };
     }
@@ -189,7 +229,7 @@ export class RunProgression {
         this._experience += amount;
         const before = this._ordinaryEarned;
         while (this._ordinaryEarned < MAX_ORDINARY_REWARDS) {
-            const required = 20 + this._ordinaryEarned * 5;
+            const required = RUN_EXPERIENCE_THRESHOLDS[this._ordinaryEarned];
             if (this._experience < required) break;
             this._experience -= required;
             this._ordinaryEarned++;
@@ -205,7 +245,7 @@ export class RunProgression {
         if (this._committing || this._offer) return null;
         const candidates = this.buildCandidates('ordinary', health).filter(candidate =>
             candidate.effect.type === 'damage' || candidate.effect.type === 'maximum-health'
-            || candidate.effect.type === 'skill-level');
+            || candidate.effect.type === 'skill-level' || candidate.effect.type === 'skill-damage');
         if (candidates.length === 0) return null;
         const candidate = candidates[Math.min(candidates.length - 1,
             Math.max(0, Math.floor(this._random() * candidates.length)))];
@@ -243,9 +283,10 @@ export class RunProgression {
             || kind === 'evolution' && !this.evolutionAvailable) return null;
         this.updateMajorSkill();
         const offer: ActiveOffer = {
-            kind, options: [], health: { ...health }, majorSkill: this._majorSkill,
-            forceMajor: kind === 'ordinary' && this._majorMisses >= 2,
-            forceNew: kind === 'ordinary' && this._newSkillMisses >= 2,
+            kind, options: [], health: { ...health },
+            majorSkill: kind === 'ordinary' && this._ordinaryClaimed < 3 ? this._initialSkill : this._majorSkill,
+            forceMajor: kind === 'ordinary' && (this._ordinaryClaimed < 3 || this._majorMisses >= 1),
+            forceNew: kind === 'ordinary' && (this._ordinaryClaimed < 3 || this._newSkillMisses >= 1),
             shownIds: new Set<string>(), shownNew: false,
         };
         this._offer = offer;
@@ -320,6 +361,7 @@ export class RunProgression {
         if (level === 0) {
             if (skill === this._initialSkill) return false;
             this._skills.delete(skill);
+            this._skillDamageRanks.delete(skill);
         } else {
             if (!this._skills.has(skill) && !ignoreSlotLimit
                 && this._skills.size >= MAX_SKILL_SLOTS) return false;
@@ -369,6 +411,9 @@ export class RunProgression {
             this._skills.set(effect.skill!, effect.level!);
             this._lastStrengthened = effect.skill!;
             break;
+        case 'skill-damage':
+            this._skillDamageRanks.set(effect.skill!, effect.damageRank!);
+            break;
         case 'damage': this._damageRanks++; break;
         case 'maximum-health': this._healthRanks++; break;
         case 'core': this._cores.add(effect.coreId!); break;
@@ -399,7 +444,18 @@ export class RunProgression {
         const candidates: Candidate[] = [];
         for (const skill of this._availableSkills) {
             const level = this.getSkillLevel(skill);
+            const damageRank = this.getSkillDamageRank(skill);
+            if (level > 0 && damageRank < MAX_SKILL_DAMAGE_RANK) {
+                const profile = SKILL_DAMAGE_PROFILES[skill];
+                candidates.push({
+                    id: `skill-damage:${skill}`, name: `${SKILL_NAMES[skill]}·伤害 ${damageRank + 1}/${MAX_SKILL_DAMAGE_RANK}`,
+                    description: `技能自身伤害：${formatCombatNumber(getSkillIntrinsicDamage(profile, damageRank))} → ${formatCombatNumber(getSkillIntrinsicDamage(profile, damageRank + 1))}。`
+                        + `\n单次伤害 = 技能自身伤害 + 攻击力 × ${profile.attackRatio}。仅强化此技能，不改变技能等级。`,
+                    effect: { type: 'skill-damage', skill, damageRank: damageRank + 1 }, tags: SKILL_TAGS[skill],
+                });
+            }
             if (level >= MAX_SKILL_LEVEL) continue;
+            if (level === 0 && !this._masteredSkills.has(skill)) continue;
             if (level === 0 && this._skills.size >= MAX_SKILL_SLOTS) continue;
             const nextLevel = level + 1;
             candidates.push({
@@ -413,14 +469,16 @@ export class RunProgression {
                 tags: SKILL_TAGS[skill],
             });
         }
-        if (this._damageRanks < 3) candidates.push({
+        // A small mastered pool must still offer meaningful early choices.
+        const allowStats = this._ordinaryClaimed >= 3 || candidates.filter(item => item.effect.type !== 'skill-damage').length < 3;
+        if (allowStats && this._damageRanks < 3) candidates.push({
             id: 'stat:damage', name: `火力 ${this._damageRanks + 1}/3`,
-            description: `全局基础伤害加成 +8 个百分点（${this._damageRanks * 8}% → ${(this._damageRanks + 1) * 8}%），同类加算。`,
-            effect: { type: 'damage', amount: 0.08 }, tags: ['single', 'area', 'burst'],
+            description: `角色攻击力加成 +${ATTACK_BONUS_PER_RANK * 100} 个百分点（${this._damageRanks * ATTACK_BONUS_PER_RANK * 100}% → ${Math.round((this._damageRanks + 1) * ATTACK_BONUS_PER_RANK * 100)}%）。提高所有技能的攻击力贡献，不改变技能自身伤害与等级。`,
+            effect: { type: 'damage', amount: ATTACK_BONUS_PER_RANK }, tags: ['single', 'area', 'burst'],
         });
         const initialMaximum = health.initialMaximum
             ?? health.maximum / (1 + this._healthRanks * 0.15);
-        if (this._healthRanks < 3 && Number.isFinite(initialMaximum) && initialMaximum > 0) {
+        if (allowStats && this._healthRanks < 3 && Number.isFinite(initialMaximum) && initialMaximum > 0) {
             const amount = initialMaximum * 0.15;
             candidates.push({
                 id: 'stat:health', name: `强健 ${this._healthRanks + 1}/3`,
@@ -429,7 +487,8 @@ export class RunProgression {
             });
         }
         if (Number.isFinite(health.current) && Number.isFinite(health.maximum)
-            && health.current > 0 && health.current < health.maximum) candidates.push({
+            && health.current > 0 && health.current < health.maximum
+            && (this._ordinaryClaimed >= 3 || health.current / health.maximum < 0.35)) candidates.push({
             id: 'stat:heal', name: '应急恢复',
             description: `恢复当前最大生命的 25%（最多 ${this.formatNumber(health.maximum * 0.25)} 点），不增加生命上限。`,
             effect: { type: 'heal', amount: health.maximum * 0.25 }, tags: ['survival'],
@@ -477,9 +536,14 @@ export class RunProgression {
             valid = valid.filter((items) => (!hasUpgrades || items.some((item) => item.effect.type === 'skill-level'))
                 && (!forceMajor || items.some((item) => item.id === majorId))
                 && (!forceNew || items.some((item) => item.effect.type === 'learn')));
+            // Reserve a damage choice, but retain access to emergency healing at low health.
+            const criticalHealth = offer.health.maximum > 0 && offer.health.current / offer.health.maximum < 0.35;
+            const withDamage = valid.filter(items => items.some(item => item.effect.type === 'skill-damage'
+                || criticalHealth && item.effect.type === 'heal'));
+            if (withDamage.length > 0) valid = withDamage;
             const withExploration = valid.filter((items) => items.some((item) => item.effect.type === 'learn'
                 || item.effect.type === 'maximum-health' || item.effect.type === 'heal'));
-            if (withExploration.length > 0) valid = withExploration;
+            if (withDamage.length === 0 && withExploration.length > 0) valid = withExploration;
         } else if (this._cores.size === 0) {
             const diverse = valid.filter((items) => new Set(items.map((item) => item.direction)).size >= 2);
             if (diverse.length > 0) valid = diverse;
@@ -508,7 +572,9 @@ export class RunProgression {
         const key = this.combinationKey(offer.options);
         return {
             kind: offer.kind,
-            options: offer.options.map(({ id, name, description }) => ({ id, name, description })),
+            options: offer.options.map(({ id, name, description, effect }) => ({
+                id, name, description, ...describeUpgrade(effect),
+            })),
             canRefresh: offer.kind !== 'evolution' && this._refreshesRemaining > 0
                 && this.buildCombinations(offer).some((items) => this.combinationKey(items) !== key),
             refreshesRemaining: this._refreshesRemaining,
@@ -552,6 +618,6 @@ export class RunProgression {
     }
 
     private formatNumber (value: number): string {
-        return String(Math.round(value * 100) / 100);
+        return formatCombatNumber(value);
     }
 }

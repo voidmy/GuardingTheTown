@@ -1,5 +1,6 @@
 import { instantiate, Node, Prefab, UIOpacity, UITransform, Vec2 } from 'cc';
 import { Ability, AbilityFrameContext, createCombatActionId, EnemyCombatWorld, EnemyId } from './CombatTypes';
+import { THUNDER_SPLASH_RATIO } from './CombatNumbers';
 
 export type ElementalKind = 'thunder' | 'chain-lightning' | 'frost-pulse';
 export interface ElementalAbilityOptions {
@@ -10,7 +11,7 @@ export interface ElementalAbilityOptions {
     level: number;
     evolved: boolean;
     cooldownMultiplier?: number;
-    getAttackPower: () => number;
+    getDamage: () => number;
     playSound?: (kind: ElementalKind, echo: boolean) => void;
 }
 interface SpellVisual {
@@ -43,6 +44,7 @@ export class ElementalAbility implements Ability {
     private _strikeRadius = 90;
     private _strikeDamage = 0;
     private _strikeEvolved = false;
+    private _strikeTarget: EnemyId | null = null;
 
     constructor (private readonly _world: EnemyCombatWorld, private readonly _options: ElementalAbilityOptions) {
         this.id = _options.kind;
@@ -96,8 +98,9 @@ export class ElementalAbility implements Ability {
         if (target === null || !this._world.getEnemyPosition(target, this._position)) return;
         this._strikeX = this._position.x;
         this._strikeY = this._position.y;
-        this._strikeRadius = level >= 3 ? 115 : 90;
-        this._strikeDamage = [0, 6, 7.5, 7.5, 10, 12][level] * this.attackPower;
+        this._strikeRadius = 90 + (level - 1) * 15;
+        this._strikeTarget = target;
+        this._strikeDamage = this.damage;
         this._strikeEvolved = this._options.evolved;
         this._strikeWait = 0.3;
         this._cooldown = (level >= 5 ? 3.2 : 4) * (this._options.cooldownMultiplier ?? 1);
@@ -113,9 +116,19 @@ export class ElementalAbility implements Ability {
         this._options.playSound?.(this.id, echo);
         this._world.queryEnemiesInCircle(this._strikeX, this._strikeY, this._strikeRadius, this._results, true);
         const actionId = createCombatActionId();
+        const damage = this._strikeDamage * (echo ? 0.6 : 1);
+        let hitIndex = 0;
+        // Only the original target receives the heavy strike, while still in the impact area.
+        // Resolve it first so reserve damage cannot be consumed by a neighbouring elite.
+        // Death or movement never transfers the heavy strike (including the echo) to a bystander.
+        if (this._strikeTarget !== null && this._results.indexOf(this._strikeTarget) >= 0) {
+            if (this._world.applyDamage(this._strikeTarget, { amount: damage,
+                sourceAbilityId: this.id, actionId, isPrimaryAttack: !echo, targetIndex: hitIndex })) hitIndex++;
+        }
         for (let i = 0; i < this._results.length; i++) {
-            this._world.applyDamage(this._results[i], { amount: this._strikeDamage * (echo ? 0.6 : 1),
-                sourceAbilityId: this.id, actionId, isPrimaryAttack: !echo, targetIndex: i });
+            if (this._results[i] === this._strikeTarget) continue;
+            if (this._world.applyDamage(this._results[i], { amount: damage * THUNDER_SPLASH_RATIO,
+                sourceAbilityId: this.id, actionId, isPrimaryAttack: !echo, targetIndex: hitIndex })) hitIndex++;
         }
     }
 
@@ -123,7 +136,7 @@ export class ElementalAbility implements Ability {
         let target = this._world.findNearestEnemy(context.originX, context.originY, 520, true);
         if (target === null) return;
         const count = this._options.evolved ? 5 : level >= 3 ? 4 : 3;
-        const jumpRange = this._options.evolved ? 250 : 200;
+        const jumpRange = this._options.evolved ? 300 : level >= 4 ? 250 : level >= 2 ? 225 : 200;
         this._chain.length = 0;
         // Capture the whole bounded route before damage can compact the enemy storage.
         for (let hop = 0; hop < count && target !== null; hop++) {
@@ -145,7 +158,7 @@ export class ElementalAbility implements Ability {
             target = best;
         }
         const actionId = createCombatActionId();
-        const damage = (this._options.evolved ? 3.8 : [0, 2, 2.5, 2.5, 3.2, 3.8][level]) * this.attackPower;
+        const damage = this.damage;
         let fromX = context.originX;
         let fromY = context.originY;
         for (let i = 0; i < this._chain.length; i++) {
@@ -167,9 +180,9 @@ export class ElementalAbility implements Ability {
         const radius = this._options.evolved ? 320 : level >= 3 ? 280 : 240;
         this._world.queryEnemiesInCircle(context.originX, context.originY, radius, this._results, true);
         if (this._results.length === 0) return;
-        const freeze = this._options.evolved ? 1 : 0.65;
+        const freeze = this._options.evolved ? 1 : level >= 2 ? 0.8 : 0.65;
         const slow = level >= 4 ? 2 : 1.5;
-        const damage = [0, 1, 1.4, 1.4, 1.8, 2.2][level] * this.attackPower;
+        const damage = this.damage;
         const actionId = createCombatActionId();
         for (let i = 0; i < this._results.length; i++) {
             const id = this._results[i];
@@ -184,7 +197,7 @@ export class ElementalAbility implements Ability {
         this._cooldown = (level >= 5 ? 5 : 6) * (this._options.cooldownMultiplier ?? 1);
     }
 
-    private get attackPower (): number { return Math.max(0, this._options.getAttackPower()); }
+    private get damage (): number { return Math.max(0, this._options.getDamage()); }
 
     private showVisual (index: number, x: number, y: number, duration: number): SpellVisual {
         const visual = this._visuals[index];
@@ -219,6 +232,7 @@ export class ElementalAbility implements Ability {
 
     public destroyAbility (): void {
         this._strikeWait = this._echoWait = -1;
+        this._strikeTarget = null;
         for (const visual of this._visuals) { visual.mark?.destroy(); visual.node.destroy(); }
         this._visuals.length = 0;
     }

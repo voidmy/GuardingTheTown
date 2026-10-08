@@ -156,7 +156,7 @@
     "__prefab": {
       "__id__": 7
     },
-    "moveSpeed": 260,
+    "moveSpeed": 220,
     "walkFrames": [
       {
         "__uuid__": "70d5cf93-329e-40a0-bf1b-a232df5a8122@f9941",
@@ -221,10 +221,10 @@
     "__prefab": {
       "__id__": 9
     },
-    "attackPower": 1,
-    "maximumHealth": 100,
-    "moveSpeed": 260,
-    "debugPreventDeath": true,
+    "attackPower": 20,
+    "maximumHealth": 2000,
+    "moveSpeed": 220,
+    "debugPreventDeath": false,
     "damageInvulnerabilityDuration": 0.5,
     "hitFlashDuration": 0.18,
     "_id": ""

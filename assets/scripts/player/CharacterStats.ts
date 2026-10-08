@@ -1,4 +1,5 @@
 import { _decorator, Component, Sprite } from 'cc';
+import { BASE_ATTACK_POWER, BASE_PLAYER_HEALTH } from '../combat/CombatNumbers';
 
 const { ccclass, menu, property } = _decorator;
 
@@ -33,16 +34,16 @@ export class CharacterStats extends Component {
     } as const;
 
     @property({ min: 0 })
-    public attackPower = 1;
+    public attackPower = BASE_ATTACK_POWER;
 
     @property({ min: 1 })
-    public maximumHealth = 100;
+    public maximumHealth = BASE_PLAYER_HEALTH;
 
     @property({ min: 1 })
-    public moveSpeed = 260;
+    public moveSpeed = 220;
 
     @property({ displayName: '测试：零血量不死亡', tooltip: '开启后血量仍可降到0，但角色继续行动、战斗、受击反馈和恢复生命。' })
-    public debugPreventDeath = true;
+    public debugPreventDeath = false;
 
     @property({ min: 0, tooltip: '有效受击后的保护时间，暂停时停止计时。' })
     public damageInvulnerabilityDuration = 0.5;

@@ -89,7 +89,7 @@ export interface EnemyCombatWorld {
 
     applyDamage (enemyId: EnemyId, damage: DamageInfo): boolean;
 
-    /** Lethal potion hit; preserves normal kill rewards and includes elites/bosses. */
+    /** Clearing potion hit; the combat world applies rank-specific damage to elites/bosses. */
     executeEnemy (enemyId: EnemyId, sourceAbilityId: string): boolean;
 }
 

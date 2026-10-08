@@ -24,6 +24,8 @@ export interface TornadoAbilityOptions {
     damageInterval: number;
     damage: number;
     getAttackPower?: () => number;
+    /** Complete damage for permanent skills; legacy coefficients remain available for potions. */
+    getDamage?: () => number;
     damageRadius?: number;
     initialDelay?: number;
     spawnDistance?: number;
@@ -178,8 +180,8 @@ export class TornadoAbility implements Ability {
             damageTimer: 0,
             damageInterval: Math.max(0.05, this._options.damageInterval),
             damage: {
-                amount: Math.max(0, this._options.damage)
-                    * Math.max(0, this._options.getAttackPower?.() ?? 1),
+                amount: this._options.getDamage?.() ?? (Math.max(0, this._options.damage)
+                    * Math.max(0, this._options.getAttackPower?.() ?? 1)),
                 sourceAbilityId: this.id,
                 isPrimaryAttack: !this._options.manual,
             },

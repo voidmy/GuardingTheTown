@@ -74,7 +74,7 @@ export class LootPickupAudio extends Component {
 
     public queuePickup (reward: LootReward): void {
         if (!this.enabledInHierarchy || this.volume <= 0) return;
-        const kind = reward.kind === 'chest' ? CHEST : reward.kind === 'equipment' ? EQUIPMENT
+        const kind = reward.kind === 'chest' || reward.kind === 'manual' ? CHEST : reward.kind === 'equipment' ? EQUIPMENT
             : reward.tier === 'boss' ? BOSS : reward.tier === 'elite' ? ELITE : NORMAL;
         // Copy only the category: LootDropModel immediately recycles the reward.
         // One pending bit per kind coalesces even hundreds of simultaneous drops.

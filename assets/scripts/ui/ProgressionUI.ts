@@ -1,5 +1,6 @@
 export interface ProgressionSkillView {
     skill: number; name: string; level: number; evolved: boolean; innate: boolean;
+    temporary?: boolean; research?: string; damageRank: number; damage: number;
 }
 export interface ProgressionSnapshot {
     elapsedSeconds: number; kills: number; skillLimit: number;

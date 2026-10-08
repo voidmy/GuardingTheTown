@@ -1,12 +1,14 @@
 import { PotionId } from './ExpeditionDefinitions';
+import type { GameSkill } from '../GameSettings';
 export type LootTier = 'normal' | 'elite' | 'boss';
-export type LootKind = 'experience' | 'chest' | 'equipment' | 'potion' | 'sand';
+export type LootKind = 'experience' | 'chest' | 'equipment' | 'potion' | 'sand' | 'manual';
 export const MAX_LOOT_DROPS = 512;
 
 export interface LootReward {
     kind?: LootKind;
     stacks?: number;
     potion?: PotionId;
+    skill?: GameSkill;
     experience: number;
     evolution: boolean;
     tier: LootTier;
@@ -45,7 +47,7 @@ export class LootDropModel {
         if (reward.experience === 0 && !reward.evolution && kind === 'experience') return;
         if (this.drops.length >= this._capacity) this.mergeOldDrops();
         const drop = this._pool.pop() ?? {} as LootDrop;
-        Object.assign(drop, { potion: undefined }, reward, { kind, stacks: Math.max(1, Math.floor(reward.stacks ?? 1)),
+        Object.assign(drop, { potion: undefined, skill: undefined }, reward, { kind, stacks: Math.max(1, Math.floor(reward.stacks ?? 1)),
             x, y, age: 0, attracted: false, speed: 0 });
         this.drops.push(drop);
     }
@@ -119,7 +121,8 @@ export class LootDropModel {
             let distanceSquared = Infinity;
             for (let other = index + 1; other < this.drops.length; other++) {
                 const candidate = this.drops[other];
-                if (candidate.kind !== anchor.kind || candidate.potion !== anchor.potion || candidate.tier !== anchor.tier || candidate.evolution !== anchor.evolution
+                if (candidate.kind !== anchor.kind || candidate.potion !== anchor.potion || candidate.skill !== anchor.skill
+                    || candidate.tier !== anchor.tier || candidate.evolution !== anchor.evolution
                     || candidate.attracted !== anchor.attracted) continue;
                 const distance = (candidate.x - anchor.x) ** 2 + (candidate.y - anchor.y) ** 2;
                 if (distance < distanceSquared) {

@@ -7,7 +7,7 @@ export interface SwordQiAbilityOptions {
     level: number;
     evolved: boolean;
     cooldownMultiplier?: number;
-    getAttackPower: () => number;
+    getDamage: () => number;
     random?: () => number;
 }
 
@@ -32,8 +32,7 @@ interface SwingState {
     complete: boolean;
 }
 
-const BASE_DAMAGE = [0, 2, 2.6, 2.6, 3.4, 4.2];
-const BASE_COOLDOWN = [0, 3, 2.6, 2.6, 2.2, 1.8];
+const BASE_COOLDOWN = [0, 5, 4.5, 4.5, 4, 3.5];
 const DOUBLE_STRIKE_CHANCE = [0, 0, 0, 0.2, 0.3, 0.4];
 const LAUNCH_TIMES = [0, 0.22, 0.30, 0.52];
 const FLIGHT_SPEED = 720;
@@ -120,8 +119,7 @@ export class SwordQiAbility implements Ability {
         this._angle = Math.atan2(this._directionY, this._directionX) * 180 / Math.PI;
 
         // Snapshot the complete cast, including the one bonus roll. Upgrades affect the next cast.
-        const damage = BASE_DAMAGE[level] * (evolved ? 1.35 : 1)
-            * Math.max(0, this._options.getAttackPower());
+        const damage = Math.max(0, this._options.getDamage());
         const doubleStrikeChance = evolved ? 0.6 : DOUBLE_STRIKE_CHANCE[level];
         const doubleStrike = doubleStrikeChance > 0
             && (this._options.random ?? Math.random)() < doubleStrikeChance;

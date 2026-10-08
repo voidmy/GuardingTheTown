@@ -18,6 +18,8 @@ export interface PiercingArrowAbilityOptions {
     hitRadius: number;
     damage: number;
     getAttackPower?: () => number;
+    /** Complete damage for permanent skills; legacy coefficients remain available for potions. */
+    getDamage?: () => number;
     pattern?: 'parallel' | 'fan';
     fanAngle?: number;
     attackRange?: number;
@@ -50,8 +52,8 @@ export class PiercingArrowAbility implements Ability {
         else if (context.facingX < -0.001) this._horizontalDirection = -1;
         let directionX = this._horizontalDirection;
         let directionY = 0;
-        // The world applies focus priority only when that core is owned. A null
-        // result preserves the original facing attack instead of inventing a target.
+        // Aim at nearby enemies; the focus core changes priority to elites/bosses.
+        // Without a target, retain the last horizontal facing direction.
         const targetId = this._world?.findAttackTarget?.(
             context.originX,
             context.originY,
@@ -73,8 +75,8 @@ export class PiercingArrowAbility implements Ability {
         const projectileCount = Math.max(1, this._options.projectilesPerShot | 0);
         const fan = this._options.pattern === 'fan';
         const actionId = createCombatActionId();
-        const damage = Math.max(0, this._options.damage)
-            * Math.max(0, this._options.getAttackPower?.() ?? 1);
+        const damage = this._options.getDamage?.() ?? (Math.max(0, this._options.damage)
+            * Math.max(0, this._options.getAttackPower?.() ?? 1));
         for (let index = 0; index < projectileCount; index++) {
             // Route 0 always preserves the original centre line. Added routes
             // alternate above/below, or fan clockwise/counterclockwise.

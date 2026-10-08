@@ -8,6 +8,7 @@ const { ccclass, menu, property, requireComponent } = _decorator;
 const LOOT_VISUALS = ['effect', 'normal', 'elite', 'boss', 'chest', 'equipment', 'potion', 'sand'] as const;
 type LootVisual = LootTier | 'chest' | 'equipment' | 'effect' | 'potion' | 'sand';
 const MAX_RARE_EFFECTS = 24;
+const MANUAL_TINT = [120, 235, 255] as const;
 
 interface LootAppearance {
     frame: SpriteFrame;
@@ -188,8 +189,10 @@ export class LootDropSystem extends Component {
         const effect = this._appearances.effect;
         let effectCount = 0;
         for (const drop of this._model.drops) {
-            const rare = drop.kind === 'chest' || drop.kind === 'equipment';
-            const appearance = this._appearances[drop.kind && drop.kind !== 'experience' ? drop.kind : drop.tier];
+            const rare = drop.kind === 'chest' || drop.kind === 'equipment' || drop.kind === 'manual';
+            // Reuse the authored chest SpriteFrame and batch for the cyan manual casket.
+            const appearance = this._appearances[drop.kind === 'manual' ? 'chest'
+                : drop.kind && drop.kind !== 'experience' ? drop.kind : drop.tier];
             if (!appearance) continue;
             const progress = Math.min(1, drop.age / Math.max(0.01, this.settleDuration));
             const bounce = progress < 1 ? Math.sin(progress * Math.PI) * 24 : 0;
@@ -198,7 +201,8 @@ export class LootDropSystem extends Component {
             const mergedScale = 1 + Math.min(0.4, Math.log2(Math.max(1,
                 rare ? drop.stacks ?? 1 : drop.experience / baseExperience)) * 0.08);
             const pulse = drop.evolution && !drop.attracted ? 1 + Math.sin(drop.age * 4) * 0.08 : 1;
-            const tint = drop.kind === 'potion' && drop.potion ? POTIONS[drop.potion].color : null;
+            const tint = drop.kind === 'manual' ? MANUAL_TINT
+                : drop.kind === 'potion' && drop.potion ? POTIONS[drop.potion].color : null;
             appearance.batch.addQuad(drop.x, drop.y + (rare ? 12 : 6) + bounce + idle, mergedScale * pulse,
                 appearance.corners, appearance.frame.uv, appearance.red * (tint ? tint[0] / 255 : 1),
                 appearance.green * (tint ? tint[1] / 255 : 1), appearance.blue * (tint ? tint[2] / 255 : 1), appearance.alpha);
@@ -206,9 +210,10 @@ export class LootDropSystem extends Component {
                 effectCount++;
                 const shimmer = 0.65 + Math.sin(drop.age * 3.2 + drop.x) * 0.15;
                 const chest = drop.kind === 'chest';
+                const manual = drop.kind === 'manual';
                 effect.batch.addQuad(drop.x, drop.y - 14, 1 + Math.sin(drop.age * 2.4) * 0.05,
-                    effect.corners, effect.frame.uv, effect.red * (chest ? 1 : 0.75),
-                    effect.green * (chest ? 0.76 : 0.45), effect.blue * (chest ? 0.28 : 1), effect.alpha * shimmer);
+                    effect.corners, effect.frame.uv, effect.red * (manual ? 0.4 : chest ? 1 : 0.75),
+                    effect.green * (manual ? 0.9 : chest ? 0.76 : 0.45), effect.blue * (chest ? 0.28 : 1), effect.alpha * shimmer);
             }
         }
         for (const batch of this._batches) batch.commit();

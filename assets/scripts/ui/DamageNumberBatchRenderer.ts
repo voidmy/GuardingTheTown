@@ -1,22 +1,41 @@
 import {
     _decorator,
     director,
+    JsonAsset,
     RenderData,
     Texture2D,
     UIRenderer,
 } from 'cc';
 import { damageNumberBatchAssembler } from './DamageNumberBatchAssembler';
+import { formatCombatNumber } from '../combat/CombatNumbers';
 
 const { ccclass, menu, property } = _decorator;
 
-const GLYPHS = '0123456789.-';
 const GLYPH_DATA_STRIDE = 12;
 const DEFAULT_MAX_ACTIVE = 40;
 const MAX_GLYPHS_PER_NUMBER = 8;
 
+interface FontGlyph {
+    id: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    xoffset: number;
+    yoffset: number;
+    xadvance: number;
+}
+
+interface FontLayout {
+    chars: FontGlyph[];
+    common: { lineHeight: number; scaleW: number; scaleH: number };
+}
+
 interface DamageNumberEntry {
     active: boolean;
     amount: number;
+    text: string;
+    textDirty: boolean;
     x: number;
     y: number;
     age: number;
@@ -33,6 +52,8 @@ function createEntry (): DamageNumberEntry {
     return {
         active: false,
         amount: 0,
+        text: '',
+        textDirty: false,
         x: 0,
         y: 0,
         age: 0,
@@ -51,6 +72,9 @@ function createEntry (): DamageNumberEntry {
 export class DamageNumberBatchRenderer extends UIRenderer {
     @property(Texture2D)
     public atlas: Texture2D | null = null;
+
+    @property(JsonAsset)
+    public fontLayout: JsonAsset | null = null;
 
     @property({ min: 1, max: DEFAULT_MAX_ACTIVE, step: 1 })
     public maxActive = DEFAULT_MAX_ACTIVE;
@@ -79,8 +103,11 @@ export class DamageNumberBatchRenderer extends UIRenderer {
     );
     private _glyphCount = 0;
     private _glyphData = new Float32Array(
-        DEFAULT_MAX_ACTIVE * MAX_GLYPHS_PER_NUMBER * GLYPH_DATA_STRIDE,
+        DEFAULT_MAX_ACTIVE * MAX_GLYPHS_PER_NUMBER * 2 * GLYPH_DATA_STRIDE,
     );
+    private _loadedFont: JsonAsset | null = null;
+    private _font: FontLayout | null = null;
+    private readonly _glyphs: Record<string, FontGlyph> = Object.create(null);
     private _spawnFrame = -1;
     private _spawnedThisFrame = 0;
 
@@ -194,6 +221,7 @@ export class DamageNumberBatchRenderer extends UIRenderer {
         for (const entry of this._entries) {
             if (!entry.active || entry.mergeKey !== mergeKey || entry.age > mergeLimit) continue;
             entry.amount += amount;
+            entry.textDirty = true;
             entry.x = entry.x * 0.75 + x * 0.25;
             entry.y = entry.y * 0.75 + y * 0.25;
             return;
@@ -230,6 +258,7 @@ export class DamageNumberBatchRenderer extends UIRenderer {
         this._spawnedThisFrame++;
         target.active = true;
         target.amount = amount;
+        target.textDirty = true;
         target.x = x;
         target.y = y;
         target.age = 0;
@@ -244,37 +273,53 @@ export class DamageNumberBatchRenderer extends UIRenderer {
 
     private rebuildGlyphData (): void {
         this._glyphCount = 0;
+        if (!this.fontLayout) return;
+        if (this._loadedFont !== this.fontLayout) {
+            this._loadedFont = this.fontLayout;
+            this._font = this.fontLayout.json as FontLayout;
+            for (const key of Object.keys(this._glyphs)) delete this._glyphs[key];
+            for (const glyph of this._font.chars) this._glyphs[String.fromCharCode(glyph.id)] = glyph;
+        }
+        const font = this._font!;
         for (const entry of this._entries) {
             if (!entry.active) continue;
 
-            const text = this.formatAmount(entry.amount);
+            // Many hits can merge into one entry in a frame; format that total only once.
+            if (entry.textDirty) {
+                entry.text = formatCombatNumber(entry.amount);
+                entry.textDirty = false;
+            }
+            const text = entry.text;
             const progress = Math.min(1, entry.age / Math.max(0.001, entry.duration));
             const scale = 0.78 + Math.min(1, entry.age / 0.08) * 0.22;
             const height = Math.max(8, this.glyphHeight) * scale;
+            const fontScale = height / Math.max(1, this._glyphs['0'].height);
             const alpha = progress <= 0.62
                 ? 1
                 : Math.max(0, 1 - (progress - 0.62) / 0.38);
             const y = entry.y + this.riseDistance * (1 - (1 - progress) ** 2);
-            const totalWidth = this.measureText(text, scale);
-            let cursorX = entry.x + entry.jitterX - totalWidth * 0.5;
-
-            for (const character of text) {
-                const glyphIndex = GLYPHS.indexOf(character);
-                if (glyphIndex < 0) continue;
-
-                const width = this.getGlyphWidth(character) * scale;
-                this.writeGlyph(
-                    cursorX + width * 0.5,
-                    y,
-                    width,
-                    height,
-                    glyphIndex,
-                    entry.red,
-                    entry.green,
-                    entry.blue,
-                    Math.round(alpha * 255),
-                );
-                cursorX += width;
+            let totalWidth = 0;
+            for (const character of text) totalWidth += (this._glyphs[character]?.xadvance ?? 0) * fontScale;
+            // One shadow and one foreground quad share the same static atlas and draw call.
+            for (let pass = 0; pass < 2; pass++) {
+                const shadow = pass === 0;
+                let cursorX = entry.x + entry.jitterX - totalWidth * 0.5;
+                for (const character of text) {
+                    const glyph = this._glyphs[character];
+                    if (!glyph) continue;
+                    this.writeGlyph(
+                        cursorX + (glyph.xoffset + glyph.width * 0.5) * fontScale + (shadow ? 2 * scale : 0),
+                        y + (font.common.lineHeight * 0.5 - glyph.yoffset - glyph.height * 0.5) * fontScale - (shadow ? 2 * scale : 0),
+                        glyph.width * fontScale,
+                        glyph.height * fontScale,
+                        glyph,
+                        shadow ? 20 : entry.red,
+                        shadow ? 22 : entry.green,
+                        shadow ? 30 : entry.blue,
+                        Math.round(alpha * 255),
+                    );
+                    cursorX += glyph.xadvance * fontScale;
+                }
             }
         }
     }
@@ -284,7 +329,7 @@ export class DamageNumberBatchRenderer extends UIRenderer {
         y: number,
         width: number,
         height: number,
-        glyphIndex: number,
+        glyph: FontGlyph,
         red: number,
         green: number,
         blue: number,
@@ -297,10 +342,10 @@ export class DamageNumberBatchRenderer extends UIRenderer {
         data[offset + 1] = y;
         data[offset + 2] = width;
         data[offset + 3] = height;
-        data[offset + 4] = glyphIndex / GLYPHS.length;
-        data[offset + 5] = 0;
-        data[offset + 6] = (glyphIndex + 1) / GLYPHS.length;
-        data[offset + 7] = 1;
+        data[offset + 4] = glyph.x / this._font!.common.scaleW;
+        data[offset + 5] = glyph.y / this._font!.common.scaleH;
+        data[offset + 6] = (glyph.x + glyph.width) / this._font!.common.scaleW;
+        data[offset + 7] = (glyph.y + glyph.height) / this._font!.common.scaleH;
         data[offset + 8] = red;
         data[offset + 9] = green;
         data[offset + 10] = blue;
@@ -315,28 +360,6 @@ export class DamageNumberBatchRenderer extends UIRenderer {
         const next = new Float32Array(Math.max(count, capacity * 2) * GLYPH_DATA_STRIDE);
         next.set(this._glyphData);
         this._glyphData = next;
-    }
-
-    private measureText (text: string, scale: number): number {
-        let width = 0;
-        for (const character of text) width += this.getGlyphWidth(character) * scale;
-        return width;
-    }
-
-    private getGlyphWidth (character: string): number {
-        if (character === '.') return 14;
-        if (character === '-') return 24;
-        return 30;
-    }
-
-    private formatAmount (amount: number): string {
-        const clamped = Math.max(-999999, Math.min(999999, amount));
-        const absolute = Math.abs(clamped);
-        const roundedInteger = Math.round(clamped);
-        if (absolute >= 10 || Math.abs(clamped - roundedInteger) < 0.05) {
-            return roundedInteger.toString();
-        }
-        return (Math.round(clamped * 10) / 10).toFixed(1);
     }
 
     private commit (): void {

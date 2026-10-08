@@ -57,7 +57,8 @@ export class GameSettings extends Component {
 
     @property({
         type: [Enum(GameSkill)],
-        displayName: 'Initial Skills',
+        displayName: '旧版初始技能（已由启程秘典替代）',
+        tooltip: '保留旧场景数据。正式开局技能由玩家在启程秘典选择，此项不再决定入场技能。',
     })
     public initialSkills: GameSkill[] = [
         GameSkill.QiBlade,

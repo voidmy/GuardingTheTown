@@ -1,0 +1,234 @@
+{
+    "chars": [
+        {
+            "chnl": 15,
+            "height": 12,
+            "id": 45,
+            "page": 0,
+            "width": 18,
+            "x": 62,
+            "xadvance": 14,
+            "xoffset": -2,
+            "y": 202,
+            "yoffset": 36
+        },
+        {
+            "chnl": 15,
+            "height": 13,
+            "id": 46,
+            "page": 0,
+            "width": 15,
+            "x": 62,
+            "xadvance": 11,
+            "xoffset": -2,
+            "y": 216,
+            "yoffset": 47
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 48,
+            "page": 0,
+            "width": 28,
+            "x": 2,
+            "xadvance": 23,
+            "xoffset": -2,
+            "y": 102,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 49,
+            "page": 0,
+            "width": 20,
+            "x": 62,
+            "xadvance": 16,
+            "xoffset": -2,
+            "y": 152,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 50,
+            "page": 0,
+            "width": 28,
+            "x": 2,
+            "xadvance": 23,
+            "xoffset": -2,
+            "y": 152,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 51,
+            "page": 0,
+            "width": 28,
+            "x": 2,
+            "xadvance": 24,
+            "xoffset": -2,
+            "y": 202,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 52,
+            "page": 0,
+            "width": 29,
+            "x": 2,
+            "xadvance": 25,
+            "xoffset": -2,
+            "y": 52,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 53,
+            "page": 0,
+            "width": 28,
+            "x": 32,
+            "xadvance": 23,
+            "xoffset": -2,
+            "y": 102,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 54,
+            "page": 0,
+            "width": 28,
+            "x": 33,
+            "xadvance": 23,
+            "xoffset": -2,
+            "y": 52,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 55,
+            "page": 0,
+            "width": 27,
+            "x": 62,
+            "xadvance": 24,
+            "xoffset": -1,
+            "y": 102,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 56,
+            "page": 0,
+            "width": 28,
+            "x": 42,
+            "xadvance": 24,
+            "xoffset": -2,
+            "y": 2,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 57,
+            "page": 0,
+            "width": 28,
+            "x": 32,
+            "xadvance": 24,
+            "xoffset": -2,
+            "y": 152,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 66,
+            "page": 0,
+            "width": 27,
+            "x": 63,
+            "xadvance": 23,
+            "xoffset": -1,
+            "y": 52,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 75,
+            "page": 0,
+            "width": 28,
+            "x": 32,
+            "xadvance": 23,
+            "xoffset": -1,
+            "y": 202,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 77,
+            "page": 0,
+            "width": 38,
+            "x": 2,
+            "xadvance": 36,
+            "xoffset": -1,
+            "y": 2,
+            "yoffset": 12
+        },
+        {
+            "chnl": 15,
+            "height": 48,
+            "id": 84,
+            "page": 0,
+            "width": 24,
+            "x": 72,
+            "xadvance": 20,
+            "xoffset": -2,
+            "y": 2,
+            "yoffset": 12
+        }
+    ],
+    "common": {
+        "alphaChnl": 0,
+        "base": 57,
+        "blueChnl": 4,
+        "greenChnl": 4,
+        "lineHeight": 72,
+        "packed": 0,
+        "pages": 1,
+        "redChnl": 4,
+        "scaleH": 256,
+        "scaleW": 256
+    },
+    "info": {
+        "aa": 1,
+        "bold": 0,
+        "charset": "",
+        "face": "Anton",
+        "italic": 0,
+        "outline": 0,
+        "padding": [
+            3,
+            3,
+            3,
+            3
+        ],
+        "size": -48,
+        "smooth": 0,
+        "spacing": [
+            2,
+            2
+        ],
+        "stretchH": 100,
+        "unicode": 1
+    },
+    "kernings": [],
+    "pages": [
+        "combat_digits.png"
+    ]
+}

@@ -1,4 +1,6 @@
 import { _decorator, Button, Color, Component, Game, game, Label, Node, Sprite, SpriteFrame } from 'cc';
+import { DEBUG } from 'cc/env';
+import { formatCombatNumber } from '../combat/CombatNumbers';
 import { ProgressionUIController } from './ProgressionUI';
 import {
     CharacterHealthSnapshot,
@@ -59,6 +61,7 @@ export class PlayerHud extends Component {
 
     protected onEnable (): void {
         this._fpsLabel = this.node.getChildByName('FpsLabel')?.getComponent(Label) ?? null;
+        if (this._fpsLabel) this._fpsLabel.node.active = DEBUG;
         this.resetFps();
         game.on(Game.EVENT_SHOW, this.resetFps, this);
         this.bindCharacter();
@@ -74,7 +77,7 @@ export class PlayerHud extends Component {
     }
 
     protected update (): void {
-        if (!this._fpsLabel) return;
+        if (!DEBUG || !this._fpsLabel) return;
         const now = Date.now();
         const elapsed = now - this._fpsSampleStartedAt;
         if (elapsed < 0) {
@@ -106,6 +109,7 @@ export class PlayerHud extends Component {
         this._progressionLabel = this.node.getChildByName('ProgressionLabel')?.getComponent(Label) ?? null;
         this._evolutionButton = this.node.getChildByName('EvolutionButton')?.getComponent(Button) ?? null;
         const cheats = this.node.getChildByName('CheatButton')?.getComponent(Button);
+        if (cheats) cheats.node.active = DEBUG;
         if (!this._progressionLabel || !this._evolutionButton || !cheats) return;
         const vitals = this.node.getChildByName('Vitals');
         const clock = this.node.getChildByName('BattleClock');
@@ -157,14 +161,15 @@ export class PlayerHud extends Component {
         const ordered = state.skills.slice().sort((a, b) => Number(b.innate) - Number(a.innate));
         this._slots.forEach((slot, index) => {
             const skill = ordered[index];
-            const key = skill ? `${skill.skill}:${skill.level}:${skill.evolved}:${skill.innate}` : 'empty';
+            const key = skill ? `${skill.skill}:${skill.level}:${skill.damageRank}:${skill.evolved}:${skill.innate}:${skill.temporary}:${skill.research}` : 'empty';
             if (key === slot.key) return;
             slot.key = key;
             slot.empty.active = !skill;
             slot.icon.node.active = Boolean(skill);
-            slot.badge.string = skill?.innate ? '本命' : `副技能 ${index}`;
+            slot.badge.string = skill?.innate ? '本命' : skill?.temporary
+                ? `本局领悟 · ${skill.research?.replace('研习 ', '') ?? ''}` : `副技能 ${index}`;
             slot.name.string = skill?.name ?? '空技能槽';
-            slot.level.string = skill ? `${skill.evolved ? '已进化 · ' : ''}Lv.${skill.level} / 5` : '升级时学习';
+            slot.level.string = skill ? `Lv.${skill.level} · 伤${skill.damageRank}/3${skill.evolved ? ' · 进化' : ''}` : '升级或秘籍学习';
             slot.name.color = skill?.evolved ? GOLD_TEXT : NORMAL_TEXT;
             if (skill) {
                 slot.icon.spriteFrame = this._icons[skill.skill] ?? null;
@@ -172,7 +177,9 @@ export class PlayerHud extends Component {
                 slot.icon.color = skill.skill === 4 ? new Color(255, 234, 160) : Color.WHITE;
             }
         });
-        const skills = state.skills.map((skill) => `${skill.name} Lv.${skill.level}${skill.evolved ? '·进化' : ''}`).join('  ');
+        const skills = state.skills.map((skill) => `${skill.name} Lv.${skill.level}${skill.evolved ? '·进化' : ''}`
+            + ` 伤害${skill.damageRank}/3（${formatCombatNumber(skill.damage)}）`
+            + (skill.temporary ? `（本局领悟 · ${skill.research}）` : '')).join('  ');
         const experience = state.experienceToNext > 0 ? `${state.experience}/${state.experienceToNext}` : '已满级';
         this._progressionLabel.string = `Lv.${state.playerLevel}  经验 ${experience}  刷新 ${state.refreshesRemaining}/3\n`
             + `${skills || '未获得技能'}\n核心：${state.cores.map((core) => core.name).join('、') || '未选择'}`
@@ -210,8 +217,8 @@ export class PlayerHud extends Component {
             this.healthFill.fillRange = Math.max(0, Math.min(1, health.ratio));
         }
         if (this.healthLabel) {
-            this.healthLabel.string = `${Math.ceil(health.current)} / ${Math.ceil(health.maximum)}`;
+            this.healthLabel.string = `${formatCombatNumber(Math.ceil(health.current))} / ${formatCombatNumber(Math.ceil(health.maximum))}`;
         }
-        if (this._shieldLabel) this._shieldLabel.string = health.shield > 0 ? `护盾 +${Math.ceil(health.shield)}` : '守镇者';
+        if (this._shieldLabel) this._shieldLabel.string = health.shield > 0 ? `护盾 +${formatCombatNumber(Math.ceil(health.shield))}` : '守镇者';
     }
 }

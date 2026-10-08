@@ -26,7 +26,7 @@ declare const wx: {
 @menu('Gameplay/Target Mover')
 export class TargetMover extends Component {
     @property({ min: 1, visible: false })
-    public moveSpeed = 260;
+    public moveSpeed = 220;
 
     @property([SpriteFrame])
     public walkFrames: SpriteFrame[] = [];

@@ -19,6 +19,8 @@ export interface QiBladeAbilityOptions {
     bladeCount: number;
     damage: number;
     getAttackPower?: () => number;
+    /** Complete damage for permanent skills; legacy coefficients remain available for potions. */
+    getDamage?: () => number;
 }
 
 interface QiBladeHitbox {
@@ -113,9 +115,9 @@ export class QiBladeAbility implements Ability {
     }
 
     private createDamageInfo (): DamageInfo {
-        const attackPower = Math.max(0, this._options.getAttackPower?.() ?? 1);
         return {
-            amount: Math.max(0, this._options.damage) * attackPower,
+            amount: this._options.getDamage?.() ?? (Math.max(0, this._options.damage)
+                * Math.max(0, this._options.getAttackPower?.() ?? 1)),
             sourceAbilityId: this.id,
             actionId: createCombatActionId(),
             isPrimaryAttack: true,

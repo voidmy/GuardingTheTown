@@ -22,12 +22,20 @@ export class PotionMenu extends Component {
         this.label('Use/Label', discard ? '使用' : '结束本局');
         this.label('Cancel/Label', discard ? '取消' : '继续守镇');
         this.node.getChildByPath('Panel/Discard')!.active = !!discard;
+        this.node.getChildByPath('Panel/Cancel')!.active = true;
         this.node.active = true;
+    }
+    /** Reuse the authored modal for chapter results; no generated UI nodes. */
+    public showResult (title: string, description: string, goHome: () => string): void {
+        this.show(title, description, goHome, null, () => {});
+        this.label('Use/Label', '返回小院');
+        this.node.getChildByPath('Panel/Cancel')!.active = false;
     }
     public hide (): void {
         this.node.active = false;
         this._use = null; this._discard = null; this._cancel = null;
     }
+    public showStatus (message: string): void { this.label('Status', message); }
     private label (path: string, text: string): void {
         const label = this.node.getChildByPath(`Panel/${path}`)?.getComponent(Label);
         if (label) label.string = text;

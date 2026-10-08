@@ -11,7 +11,7 @@ export const POTIONS: Readonly<Record<PotionId, { name: string; description: str
     storm: { name: '风涡灵露', description: '前方召出持续5秒的龙卷风，聚拢普通怪并持续造成伤害。Boss不受牵引，同屏最多一个。', color: [128, 238, 207] },
     frost: { name: '凝霜灵露', description: '冻结周围普通怪1.5秒，再减速45%持续2秒；精英仅减速，Boss免控。', color: [140, 207, 255] },
     healing: { name: '回春灵露', description: '立即恢复最大生命的30%。生命已满时无法使用，可以丢弃腾出栏位。', color: [255, 156, 176] },
-    'earth-rift': { name: '地裂灵露', description: '自动瞄准附近怪群，撕开长2000、宽480的巨型地裂；无目标时沿角色朝向释放。0.48秒后秒杀范围内怪物（含精英与Boss）。同屏最多一道，残留裂缝不再造成伤害。', color: [255, 183, 83] },
+    'earth-rift': { name: '地裂灵露', description: '自动瞄准怪群撕开巨型地裂。0.48秒后清除范围内普通怪，对精英造成其最大生命60%的伤害，对Boss造成30%。同屏最多一道，残留裂缝不再造成伤害。', color: [255, 183, 83] },
     rain: { name: '唤雨灵露', description: '唤来持续6秒的全屏暴雨，每0.5秒对视野内敌人造成150%攻击伤害。雨幕随视野移动，可边走边打；精英与Boss同样受伤，同屏最多一场雨。', color: [65, 170, 235] },
 };
 export const POTION_IDS: readonly PotionId[] = ['storm', 'frost', 'healing', 'earth-rift', 'rain'];
